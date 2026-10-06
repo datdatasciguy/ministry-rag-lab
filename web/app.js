@@ -317,7 +317,7 @@ async function submitQuery(event) {
   element('results').replaceChildren();
   const controls = [...element('search').querySelectorAll('button, select, textarea, input')];
   const disabled = controls.map(control => control.disabled);
-  const payload = {question: element('question').value, book: element('book').value, author: element('author').value, collection: element('collection').value, mode: element('mode').value, limit: Number(element('limit').value), answer_sources: Number(element('answer-sources').value), answer_length: element('answer-length').value, answer_words: Number(element('answer-words').value), model: element('model').value, answer};
+  const payload = {question: element('question').value, book: element('book').value, author: element('author').value, collection: element('collection').value, mode: element('mode').value, limit: Number(element('limit').value), answer_sources: Number(element('answer-sources').value), answer_length: element('answer-length').value, answer_words: Number(element('answer-words').value), model: element('model').value, allow_extrapolation: element('allow-extrapolation').checked, answer};
   controls.forEach(control => control.disabled = true);
   try {
     const response = await fetch('/api/query', {
@@ -344,6 +344,13 @@ async function submitQuery(event) {
       if (data.model) panel.append(makeNode('p', 'Answer model: ' + data.model, 'muted'));
       if (data.target_words) panel.append(makeNode('p', `${data.answer_words} words · requested about ${data.target_words}.`, 'muted'));
       element('answer').append(panel);
+      if (data.extrapolation) {
+        const reflection = makeNode('section', '', 'answer extrapolation');
+        reflection.append(makeNode('h3', 'Extrapolation — not directly supported by the retrieved passages'));
+        reflection.append(makeNode('p', 'Model speculation, not a statement of the ministry or direct source evidence.', 'muted'));
+        reflection.append(renderAnswer(data.extrapolation, 0));
+        element('answer').append(reflection);
+      }
     }
     showSources(data.sources);
     const scope = data.scope === 'all' ? 'All authors' : data.scope + (data.collection === 'balanced' ? ' · ministry authorship' : ' · verified authorship only');
@@ -360,7 +367,7 @@ async function submitQuery(event) {
 }
 
 element('search').addEventListener('submit', submitQuery);
-for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model']) {
+for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation']) {
   element(id).addEventListener('change', () => {
     element('answer').replaceChildren();
     element('results').replaceChildren();

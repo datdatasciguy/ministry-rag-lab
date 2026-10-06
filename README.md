@@ -20,6 +20,10 @@ Quick, Standard and Detailed presets set the answer length and source count to f
 
 Answers render headings, lists, emphasis and inline passage citations. Click a reference such as [14] to jump to its numbered source card, then expand context for more surrounding text. Model text is rendered as text and safe formatting, never executable HTML.
 
+Answers require direct support for the actual question. Related themes alone do not establish a spiritual meaning. When the retrieved passages lack that support, the model should say so and ask for clarification; this does not prove the whole corpus lacks an answer. Advanced includes an optional extrapolation switch, off by default. Any speculation appears in a separate labeled box with no direct-evidence citations or attribution to the ministry.
+
+Validation checks citation bounds, quotation text, unsupported-answer citations and explicit admissions of missing direct support. These checks do not prove that every claim follows from its passage; model errors remain possible. The local check for the reported ambiguous term and a supported life question is a focused check, not a general accuracy benchmark.
+
 ## Run from source
 
 Python 3.11+ and [Ollama](https://ollama.com/) for model features.

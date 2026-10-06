@@ -27,6 +27,7 @@ class Query(BaseModel):
     answer_length: str = Field(default="medium", pattern="^(short|medium|detailed|custom)$")
     answer_words: int = Field(default=250, ge=50, le=1500)
     model: str = Field(default="", max_length=120)
+    allow_extrapolation: bool = False
 
 def create_app(index_path, model, desktop=False):
     index = SearchIndex(index_path)
@@ -65,7 +66,7 @@ def create_app(index_path, model, desktop=False):
             counts = dict(Counter(hit["kind"] for hit in hits))
             if body.answer and hits:
                 selected_model = body.model or model
-                return {**generate(body.question, hits, selected_model, body.answer_length, body.answer_words), "scope": scope, "collection": body.collection, "answer_sources": len(hits), "source_counts": counts}
+                return {**generate(body.question, hits, selected_model, body.answer_length, body.answer_words, body.allow_extrapolation), "scope": scope, "collection": body.collection, "answer_sources": len(hits), "source_counts": counts}
             return {"sources": hits, "answer": "No matching passages found in this scope." if not hits else "", "citations": [], "abstain": not hits, "scope": scope, "collection": body.collection, "source_counts": counts}
         except (ValueError, RuntimeError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
