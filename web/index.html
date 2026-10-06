@@ -10,6 +10,9 @@ form{box-sizing:border-box;min-width:0}form label{max-width:100%;vertical-align:
 select,input{box-sizing:border-box;max-width:100%}
 .book-control{display:block!important}#book{display:block;width:100%;margin-right:0}
 .source,.answer{overflow-wrap:anywhere;min-width:0}
+.source-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start}
+.source-column{min-width:0}.source-column h2{font:600 22px system-ui}.source:target{outline:2px solid #315e49;scroll-margin-top:20px}
+@media(max-width:700px){.source-columns{grid-template-columns:1fr}}
 :root{font-family:system-ui;color:#253129;background:#f5f4ed}body{max-width:1000px;margin:48px auto;padding:0 24px}h1{font-family:Georgia,serif;font-size:42px;margin-bottom:8px}.muted{color:#667369}form,.answer,.source{background:white;border:1px solid #d9dfd5;padding:22px;border-radius:12px;margin:16px 0}textarea{box-sizing:border-box;width:100%;padding:14px;font:inherit;border:1px solid #b8c4b8;border-radius:6px;resize:vertical}select,button{font:inherit;padding:10px;border-radius:6px;margin:12px 8px 0 0;border:1px solid #b8c4b8}button{background:#315e49;color:white;cursor:pointer}button:disabled{opacity:.5}.text{white-space:pre-wrap;line-height:1.6}a{color:#315e49}h3{margin-top:0}.error{color:#8c2727}label{display:inline-block;margin-right:12px}
 </style>
 <h1>Ministry Search RAG</h1>
@@ -25,8 +28,10 @@ select,input{box-sizing:border-box;max-width:100%}
 <label>Search <select id="mode"><option value="lexical">Words and phrases</option><option value="hybrid" id="hybrid">Words + meaning</option></select></label>
 <div><label>Search results <input id="limit" type="number" min="1" max="100" value="6" required style="width:65px;padding:8px;font:inherit"></label>
 <label>Answer sources <input id="answer-sources" type="number" min="1" max="40" value="8" required style="width:65px;padding:8px;font:inherit"></label></div>
-<p class="muted">Find passages returns 1–100 results. Answer uses 1–40 ranked passages and shows those sources. More sources take longer; they do not search every occurrence.</p>
+<p class="muted">Find passages returns 1–100 results. Answer uses up to 4–40 ranked passages, depending on the model, and shows those sources. More sources take longer; they do not search every occurrence.</p>
 <label>Answer length <select id="answer-length"><option value="short">Short · about 100 words</option><option value="medium" selected>Medium · about 250 words</option><option value="detailed">Detailed · about 600 words</option><option value="custom">Advanced · custom word target</option></select></label>
+<label>Answer model <select id="model"><option value="">Server default</option></select></label>
+<p id="model-help" class="muted"></p>
 <label id="custom-length" hidden>Word target <input id="answer-words" type="number" min="50" max="1500" value="250" required style="width:75px;padding:8px;font:inherit"></label>
 <p class="muted">Length targets are approximate. Answers stay grounded in the selected sources and may be shorter when there is less to explain.</p>
 <p class="muted">Yellow highlights show query word matches. Expanded context marks the retrieved passage in green. Meaning ranks compare whole passages.</p>

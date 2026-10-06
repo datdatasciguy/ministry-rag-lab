@@ -2,6 +2,7 @@ import json
 import re
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
+from model_options import model_profile
 
 BASE = "http://127.0.0.1:11434"
 
@@ -67,6 +68,9 @@ def generate(question, hits, model, length="medium", words=250):
     if length not in {*presets, "custom"} or not 50 <= words <= 1500:
         raise ValueError("Choose a supported answer length and 50–1,500 target words")
     target = words if length == "custom" else presets[length]
+    budget = model_profile(model)
+    if len(hits) > budget["sources"] or target > budget["words"]:
+        raise ValueError(f"{model} uses a budget of {budget['sources']} sources and {budget['words']} target words. Reduce the request or choose a larger model.")
     detail = ("Give the direct point in one compact paragraph." if target <= 120 else
               "Explain the main supported points in a few paragraphs." if target <= 350 else
               "Give a developed explanation with several substantive sections. Explain each "
@@ -109,7 +113,7 @@ def generate(question, hits, model, length="medium", words=250):
     schema = {"type": "object", "properties": {"answer": {"type": "string"},
               "citations": {"type": "array", "maxItems": len(hits), "items": {"type": "integer", "enum": list(range(1, len(hits) + 1))}}, "abstain": {"type": "boolean"}},
               "required": ["answer", "citations", "abstain"], "additionalProperties": False}
-    context_tokens = 8192 if len(hits) <= 8 and target <= 600 else 32768
+    context_tokens = min(budget["context"], 8192 if len(hits) <= 8 and target <= 600 else 32768)
     output_tokens = max(1024, target * 4 + 512)
     payload = {"model": model, "system": system, "prompt": prompt, "format": schema,
                "stream": False, "think": False, "options": {"temperature": 0, "num_ctx": context_tokens, "num_predict": output_tokens}}

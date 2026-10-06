@@ -2,6 +2,7 @@ import argparse
 import json
 
 from local_model import generate
+from model_options import model_profile, read_settings
 from search import SearchIndex, build_index
 
 def main():
@@ -21,10 +22,10 @@ def main():
         query.add_argument("--book", default="")
         query.add_argument("--author", choices=["auto", "all", "Witness Lee", "Watchman Nee"], default="auto")
         query.add_argument("--collection", choices=["all", "ministry", "bible", "notes", "balanced"], default="all")
-        query.add_argument("--limit", type=int, default=8 if name == "ask" else 6,
+        query.add_argument("--limit", type=int, default=None if name == "ask" else 6,
                            help="Passages to return (search: 1–100; ask: 1–40)")
         if name == "ask":
-            query.add_argument("--model", default="qwen2.5:7b")
+            query.add_argument("--model")
             query.add_argument("--length", choices=["short", "medium", "detailed", "custom"], default="medium")
             query.add_argument("--words", type=int, default=250, help="Custom word target (50–1,500)")
     args = parser.parse_args()
@@ -32,8 +33,10 @@ def main():
         if args.command == "build":
             result = build_index(args.source, args.index, args.embedding_model, resume=args.resume)
         else:
-            hits = SearchIndex(args.index).search(args.question, args.mode, args.limit, args.book, args.author, args.collection)
-            result = generate(args.question, hits, args.model, args.length, args.words) if args.command == "ask" and hits else {"sources": hits}
+            model = (args.model or read_settings().get("model", "qwen2.5:7b")) if args.command == "ask" else ""
+            limit = args.limit if args.limit is not None else min(8, model_profile(model)["sources"])
+            hits = SearchIndex(args.index).search(args.question, args.mode, limit, args.book, args.author, args.collection)
+            result = generate(args.question, hits, model, args.length, args.words) if args.command == "ask" and hits else {"sources": hits}
         print(json.dumps(result, indent=2, ensure_ascii=False))
     except (ValueError, RuntimeError, OSError) as error:
         parser.exit(1, str(error) + "\n")

@@ -9,13 +9,13 @@ weights have been trained or fine-tuned in this repository.
 
 | Component | Role | Training status in this project |
 | --- | --- | --- |
-| Qwen2.5 Instruct | Generate an answer from retrieved passages | Pretrained and instruction-tuned by its provider; used for local inference |
+| Qwen2.5 / Qwen3 / SmolLM2 Instruct | Generate an answer from retrieved passages | Pretrained and instruction-tuned by its provider; used for local inference |
 | Nomic Embed Text v1.5 | Encode passages and queries into vectors | Trained by its provider; used unchanged |
 | SQLite FTS5 | Find lexical matches | Builds an inverted index; no neural training |
 | Hybrid retrieval and prompts | Select evidence and constrain answers | Implemented and checked here; no learned ranking parameters |
 
-The active local answer model can be `qwen2.5:14b`; the public starter command
-uses `qwen2.5:7b` to make the demo easier to run. The 14B model card describes a
+The developer currently uses `qwen2.5:14b`. First-run setup lets each user
+choose a model that fits their hardware; the CLI and app honor that choice. The 14B model card describes a
 causal Transformer with pretraining and post-training, grouped-query attention,
 RoPE positional embeddings, RMSNorm, and SwiGLU. Grouped-query attention shares
 key/value heads among query heads, reducing the KV cache cost. These are model
@@ -135,9 +135,11 @@ shows the actual count; source support takes priority over padding an answer.
 For long targets, an overly brief first draft can receive one expansion pass with
 the same evidence. Citations and quotations are validated again; a failed expansion
 leaves the valid first answer available. This is bounded prompting, not a training step.
-The context
-setting is 8,192 tokens for up to eight passages and targets up to 600 words,
-or 32,768 for larger requests.
+The context setting starts at 8,192 tokens for up to eight passages and targets
+up to 600 words, or 32,768 for larger requests, then is capped by the selected
+model profile. Small profiles use 4,096 or 8,192; larger profiles allow 16,384
+or 32,768. Source and word budgets are also checked before inference. See
+[model choices](models.md) for the per-model settings.
 Those are this application's settings, not the model's
 advertised maximum context. A JSON schema constrains the answer, citation array,
 and abstention flag. Page markers are removed from prompt text to reduce their
@@ -184,12 +186,13 @@ control evidence representation, not factual support or exact prose proportions.
 
 ## What the checks establish
 
-The public notebook and evaluation script use eight original diagnostic passages
-and questions. Hit@k measures whether a labeled title appears; mean reciprocal
-rank measures the position of the first relevant title. These are plumbing
-checks, not independent corpus-wide retrieval or answer-accuracy benchmarks.
-The notebook also exercises author routing, split-verse parsing, footnote scope,
-and exact references with original format fixtures.
+Development checks used eight original diagnostic passages and questions, plus
+format fixtures for author routing, split verses, footnotes and exact references.
+Those diagnostic scripts, fixtures and notebooks are now kept privately; the
+public repository contains runtime code and documentation. Hit@k measures
+whether a labeled title appears, and mean reciprocal rank measures the position
+of the first relevant title. These diagnostics are not independent corpus-wide
+retrieval or answer-accuracy benchmarks.
 
 Real-collection checks remain private. They verify selected queries, author
 exclusion, book filters, source references, semantic-mode availability, citation

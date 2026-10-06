@@ -1,4 +1,6 @@
 const element = id => document.getElementById(id);
+let modelProfiles = [];
+let defaultModel = '';
 
 function makeNode(tag, text, className) {
   const node = document.createElement(tag);
@@ -29,8 +31,10 @@ function highlightedText(tag, text, terms = [], passage = '') {
   return node;
 }
 
-function showSource(source, number) {
+function showSource(source, number, container) {
   const card = makeNode('section', '', 'source');
+  card.id = 'source-' + number;
+  card.tabIndex = -1;
   card.append(highlightedText('h3', `${number}. ${source.title}`, source.matched_terms));
   const heading = highlightedText('p', source.heading, source.matched_terms);
   heading.classList.add('muted');
@@ -47,15 +51,35 @@ function showSource(source, number) {
   card.append(highlightedText('p', source.text, source.matched_terms));
   const expanded = makeNode('div', '', 'context');
   const expand = makeNode('button', 'Expand context');
+  const collapse = makeNode('button', 'Hide context');
+  collapse.type = 'button';
+  collapse.hidden = true;
+  collapse.addEventListener('click', () => {
+    expanded.hidden = true;
+    collapse.hidden = true;
+    expand.textContent = 'Show context';
+    expand.disabled = false;
+  });
   expand.type = 'button';
   let words = 300;
+  let contextLabel = 'Expand context';
+  let contextComplete = false;
   expand.addEventListener('click', async () => {
+    if (expanded.hidden && expanded.childNodes.length) {
+      expanded.hidden = false;
+      collapse.hidden = false;
+      expand.textContent = contextLabel;
+      expand.disabled = contextComplete;
+      return;
+    }
     expand.disabled = true;
     try {
       const response = await fetch(`/api/context/${encodeURIComponent(source.id)}?words=${words}`);
       const data = await response.json();
       if (!response.ok) throw Error(data.detail || 'Context unavailable');
       expanded.replaceChildren(makeNode('p', 'Surrounding text from this book. Expanded context is for reading; it does not change the generated answer.', 'muted'));
+      expanded.hidden = false;
+      collapse.hidden = false;
       for (const section of data.sections) {
         expanded.append(makeNode('h4', section.heading || source.title), highlightedText('p', section.text, source.matched_terms, source.text));
       }
@@ -63,12 +87,14 @@ function showSource(source, number) {
       words = Math.min(words * 3, 8100);
       expand.textContent = data.more ? (limit ? 'Context limit shown' : 'Show more before and after') : 'Full available context shown';
       expand.disabled = !data.more || limit;
+      contextLabel = expand.textContent;
+      contextComplete = expand.disabled;
     } catch (error) {
       expanded.replaceChildren(makeNode('p', error.message, 'error'));
       expand.disabled = false;
     }
   });
-  card.append(expand, expanded);
+  card.append(expand, collapse, expanded);
   if (source.url) {
     try {
       const url = new URL(source.url, location.origin);
@@ -81,7 +107,26 @@ function showSource(source, number) {
       }
     } catch { /* Keep the passage readable if its source link is invalid. */ }
   }
-  element('results').append(card);
+  container.append(card);
+}
+
+function showSources(sources) {
+  const groups = [
+    {title: 'Bible & footnotes', kinds: ['bible', 'notes']},
+    {title: 'Ministry', kinds: ['ministry']}
+  ];
+  const available = groups.filter(group => sources.some(source => group.kinds.includes(source.kind)));
+  element('results').classList.toggle('source-columns', available.length === 2);
+  for (const group of available) {
+    const column = makeNode('section', '', 'source-column');
+    column.setAttribute('aria-label', group.title);
+    const count = sources.filter(source => group.kinds.includes(source.kind)).length;
+    column.append(makeNode('h2', `${group.title} · ${count}`));
+    sources.forEach((source, index) => {
+      if (group.kinds.includes(source.kind)) showSource(source, index + 1, column);
+    });
+    element('results').append(column);
+  }
 }
 
 async function loadBooks() {
@@ -114,6 +159,41 @@ async function loadBooks() {
   }
 }
 
+function selectModel() {
+  const profile = modelProfiles.find(row => row.model === (element('model').value || defaultModel));
+  if (!profile) return;
+  element('answer-sources').max = profile.sources;
+  element('answer-sources').value = Math.min(Number(element('answer-sources').value), profile.sources);
+  element('answer-words').max = profile.words;
+  element('answer-words').value = Math.min(Number(element('answer-words').value), profile.words);
+  element('answer-length').querySelector('option[value="detailed"]').disabled = profile.words < 600;
+  if (element('answer-length').value === 'detailed' && profile.words < 600) element('answer-length').value = 'medium';
+  element('custom-length').hidden = element('answer-length').value !== 'custom';
+  element('model-help').textContent = `${profile.hardware} ${profile.tradeoff} Budget: ${profile.sources} sources / ${profile.words} target words. Run setup.py to add another model.`;
+}
+
+async function loadModels() {
+  try {
+    const response = await fetch('/api/models');
+    if (!response.ok) throw Error('Models unavailable');
+    const data = await response.json();
+    modelProfiles = data.models;
+    defaultModel = data.default;
+    element('model').options[0].textContent = 'Server default · ' + data.default;
+    for (const profile of modelProfiles) {
+      const option = makeNode('option', profile.label + ' · ' + profile.model + (profile.installed ? '' : ' · not downloaded'));
+      option.value = profile.model;
+      option.disabled = !profile.installed;
+      element('model').append(option);
+    }
+    if (modelProfiles.some(profile => profile.model === data.default && profile.installed)) element('model').value = data.default;
+    selectModel();
+    if (data.notice) element('model-help').textContent = data.notice;
+  } catch {
+    element('model-help').textContent = 'Model choices unavailable. The server default remains selected.';
+  }
+}
+
 async function submitQuery(event) {
   event.preventDefault();
   const answer = event.submitter?.dataset.answer === 'true';
@@ -123,7 +203,7 @@ async function submitQuery(event) {
   element('results').replaceChildren();
   const controls = [...element('search').querySelectorAll('button, select, textarea, input')];
   const disabled = controls.map(control => control.disabled);
-  const payload = {question: element('question').value, book: element('book').value, author: element('author').value, collection: element('collection').value, mode: element('mode').value, limit: Number(element('limit').value), answer_sources: Number(element('answer-sources').value), answer_length: element('answer-length').value, answer_words: Number(element('answer-words').value), answer};
+  const payload = {question: element('question').value, book: element('book').value, author: element('author').value, collection: element('collection').value, mode: element('mode').value, limit: Number(element('limit').value), answer_sources: Number(element('answer-sources').value), answer_length: element('answer-length').value, answer_words: Number(element('answer-words').value), model: element('model').value, answer};
   controls.forEach(control => control.disabled = true);
   try {
     const response = await fetch('/api/query', {
@@ -137,12 +217,22 @@ async function submitQuery(event) {
       const panel = makeNode('section', '', 'answer');
       panel.append(makeNode('h3', data.abstain ? 'More evidence needed' : 'Answer'));
       panel.append(makeNode('p', data.answer, 'text'));
-      if (data.citations?.length) panel.append(makeNode('p', 'Supporting passages: ' + data.citations.join(', '), 'muted'));
+      if (data.citations?.length) {
+        const citations = makeNode('p', 'Supporting passages: ', 'muted');
+        data.citations.forEach((number, index) => {
+          if (index) citations.append(document.createTextNode(', '));
+          const link = makeNode('a', '[' + number + ']');
+          link.href = '#source-' + number;
+          citations.append(link);
+        });
+        panel.append(citations);
+      }
       if (data.answer_sources) panel.append(makeNode('p', `The model received ${data.answer_sources} passages · ${data.context_tokens.toLocaleString()} token context setting.`, 'muted'));
+      if (data.model) panel.append(makeNode('p', 'Answer model: ' + data.model, 'muted'));
       if (data.target_words) panel.append(makeNode('p', `${data.answer_words} words · requested about ${data.target_words}.`, 'muted'));
       element('answer').append(panel);
     }
-    data.sources.forEach((source, index) => showSource(source, index + 1));
+    showSources(data.sources);
     const scope = data.scope === 'all' ? 'All authors' : data.scope + (data.collection === 'balanced' ? ' · ministry authorship' : ' · verified authorship only');
     const collection = {all: 'Everything', balanced: 'Balanced sources', ministry: 'Ministry books', bible: 'Bible verses only', notes: 'Bible footnotes only'}[data.collection];
     const counts = data.source_counts || {};
@@ -157,7 +247,7 @@ async function submitQuery(event) {
 }
 
 element('search').addEventListener('submit', submitQuery);
-for (const id of ['book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words']) {
+for (const id of ['book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model']) {
   element(id).addEventListener('change', () => {
     element('answer').replaceChildren();
     element('results').replaceChildren();
@@ -168,3 +258,5 @@ element('answer-length').addEventListener('change', () => {
   element('custom-length').hidden = element('answer-length').value !== 'custom';
 });
 loadBooks();
+element('model').addEventListener('change', selectModel);
+loadModels();

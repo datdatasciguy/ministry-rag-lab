@@ -10,7 +10,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from local_model import generate
+from local_model import generate, request as model_request
+from model_options import PROFILES, read_settings
 from search import SearchIndex
 from catalog import author_scope
 
@@ -25,6 +26,7 @@ class Query(BaseModel):
     answer_sources: int = Field(default=8, ge=1, le=40)
     answer_length: str = Field(default="medium", pattern="^(short|medium|detailed|custom)$")
     answer_words: int = Field(default=250, ge=50, le=1500)
+    model: str = Field(default="", max_length=120)
 
 def create_app(index_path, model):
     index = SearchIndex(index_path)
@@ -62,10 +64,20 @@ def create_app(index_path, model):
             scope = author_scope(body.question, body.author)
             counts = dict(Counter(hit["kind"] for hit in hits))
             if body.answer and hits:
-                return {**generate(body.question, hits, model, body.answer_length, body.answer_words), "scope": scope, "collection": body.collection, "answer_sources": len(hits), "source_counts": counts}
+                selected_model = body.model or model
+                return {**generate(body.question, hits, selected_model, body.answer_length, body.answer_words), "scope": scope, "collection": body.collection, "answer_sources": len(hits), "source_counts": counts}
             return {"sources": hits, "answer": "No matching passages found in this scope." if not hits else "", "citations": [], "abstain": not hits, "scope": scope, "collection": body.collection, "source_counts": counts}
         except (ValueError, RuntimeError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/models")
+    def models():
+        try:
+            installed = {row["name"] for row in model_request("/api/tags")["models"]
+                         if not row.get("remote_host") and not row.get("remote_model") and "cloud" not in row["name"].casefold()}
+            return {"default": model, "models": [{**profile, "installed": profile["model"] in installed} for profile in PROFILES]}
+        except RuntimeError:
+            return {"default": model, "models": [], "notice": "Start Ollama to choose installed answer models. Keyword search still works."}
 
     @app.get("/api/context/{chunk_id}")
     def context(chunk_id: str, words: int = 300):
@@ -90,11 +102,16 @@ def create_app(index_path, model):
 def main():
     # Arguments
     parser = argparse.ArgumentParser(description="Open a local book search interface.")
-    parser.add_argument("--index", required=True)
-    parser.add_argument("--model", default="qwen2.5:7b")
+    parser.add_argument("--index")
+    parser.add_argument("--model")
     parser.add_argument("--port", type=int, default=8766)
     args = parser.parse_args()
-    uvicorn.run(create_app(args.index, args.model), host="127.0.0.1", port=args.port, access_log=False)
+    settings = read_settings()
+    index = args.index or settings.get("index", "data/books.sqlite")
+    model = args.model or settings.get("model", "qwen2.5:7b")
+    if not Path(index).is_file():
+        parser.error("Build your collection index first; see docs/sharing.md")
+    uvicorn.run(create_app(index, model), host="127.0.0.1", port=args.port, access_log=False)
 
 if __name__ == "__main__":
     main()
