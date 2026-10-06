@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Local book search</title>
+<style>
+:root{font-family:system-ui;color:#253129;background:#f5f4ed}body{max-width:1000px;margin:48px auto;padding:0 24px}h1{font-family:Georgia,serif;font-size:42px;margin-bottom:8px}.muted{color:#667369}form,.answer,.source{background:white;border:1px solid #d9dfd5;padding:22px;border-radius:12px;margin:16px 0}textarea{box-sizing:border-box;width:100%;padding:14px;font:inherit;border:1px solid #b8c4b8;border-radius:6px;resize:vertical}select,button{font:inherit;padding:10px;border-radius:6px;margin:12px 8px 0 0;border:1px solid #b8c4b8}button{background:#315e49;color:white;cursor:pointer}button:disabled{opacity:.5}.text{white-space:pre-wrap;line-height:1.6}a{color:#315e49}h3{margin-top:0}.error{color:#8c2727}label{display:inline-block;margin-right:12px}
+</style>
+<h1>Your books, easier to find.</h1>
+<p class="muted">Search passages, or ask a local model to explain them with sources.</p>
+<p id="info" class="muted">Loading collection…</p>
+<form id="search">
+<textarea id="question" rows="3" maxlength="2000" placeholder="What would you like to find?" required></textarea>
+<label>Book <select id="book"><option value="">All books</option></select></label>
+<label>Search <select id="mode"><option value="lexical">Words and phrases</option><option value="hybrid" id="hybrid">Words + meaning</option></select></label>
+<div><button type="submit" data-answer="false">Find passages</button><button type="submit" data-answer="true">Answer from passages</button></div>
+</form>
+<p id="status" role="status"></p><div id="answer"></div><div id="results"></div>
+<script src="/app.js"></script>
+</html>
