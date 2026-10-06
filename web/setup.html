@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Set up Ministry Search RAG</title>
+<style>
+:root{font:17px/1.5 system-ui;color:#253129;background:#f5f4ed}body{max-width:800px;margin:40px auto;padding:0 24px}h1{font:38px Georgia,serif}section{background:white;border:1px solid #d9dfd5;border-radius:12px;padding:24px;margin:20px 0}button,select,input{font:inherit;max-width:100%;box-sizing:border-box}select{width:100%;padding:12px}button{padding:12px 20px;background:#315e49;color:white;border:0;border-radius:6px;cursor:pointer}button:disabled{opacity:.5}a{color:#315e49}.muted{color:#667369}.error{color:#8c2727}[hidden]{display:none!important}#progress{white-space:pre-wrap;overflow-wrap:anywhere}
+</style>
+<h1>Set up Ministry Search RAG</h1>
+<p>No terminal or Python installation needed. Your collection and answers stay on this computer.</p>
+<section>
+<h2>1. Local model runtime</h2>
+<p>Keep Ollama running. Windows setup offers its official installer when it is missing. On Mac, install Ollama once from its official download page.</p>
+<a id="ollama" href="https://ollama.com/download" target="_blank" rel="noopener noreferrer">Get Ollama if needed</a>
+</section>
+<section>
+<h2>2. Your private collection</h2>
+<p>Choose the complete <strong>.sqlite</strong> search index supplied privately, or one you built from permitted source files. Book content is not included in this installer.</p>
+<input id="index" type="file" accept=".sqlite,.db" aria-label="Private collection index">
+<p id="collection" class="muted">No collection selected.</p>
+<p class="muted">This copies the index into your local app data. Allow space for a second copy. Previous collections are preserved.</p>
+</section>
+<section>
+<h2>3. Choose an answer model</h2>
+<label for="model">Model</label><select id="model"></select>
+<p id="hardware"></p><p id="tradeoff"></p><p id="budget" class="muted"></p>
+<p class="muted">Hardware figures are planning suggestions, not tested minimums. CPU inference can be slow. Tiny/mobile-scale models still run through this desktop app and have weaker answer reliability.</p>
+<p>Only your chosen answer model and the index's embedding model are downloaded. Model downloads require internet access; inference uses the local runtime.</p>
+<button id="start" type="button">Download models and open search</button>
+</section>
+<p id="progress" role="status"></p>
+<a id="open" href="/" hidden>Open search</a> <button id="quit" type="button">Quit app</button>
+<p class="muted">You can switch installed models inside search. Reopen this setup page after restarting the app to add a model. Closing the browser keeps the local app running; use Quit app on this page to stop it.</p>
+<script>
+const token = '__SETUP_TOKEN__';
+const element = id => document.getElementById(id);
+let profiles = [];
+let uploading = false;
+let launching = false;
+
+function showModel() {
+  const profile = profiles.find(row => row.model === element('model').value);
+  if (!profile) return;
+  element('hardware').textContent = profile.hardware;
+  element('tradeoff').textContent = profile.tradeoff;
+  element('budget').textContent = `Download: ${profile.download} plus about 274 MB for Nomic when needed. Answer budget: ${profile.sources} sources / ${profile.words} target words.`;
+}
+
+async function refresh() {
+  try {
+    const response = await fetch('/setup/status');
+    const data = await response.json();
+    element('ollama').href = data.platform === 'Darwin' ? 'https://ollama.com/download/mac' : 'https://ollama.com/download/windows';
+    if (!profiles.length) {
+      profiles = data.models;
+      for (const profile of profiles) {
+        const option = document.createElement('option');
+        option.value = profile.model;
+        option.textContent = `${profile.label} · ${profile.model} · ${profile.download}`;
+        element('model').append(option);
+      }
+      element('model').value = data.model;
+      showModel();
+    }
+    element('collection').textContent = data.index ? 'Selected: ' + data.index : 'No collection selected.';
+    if (!uploading) element('progress').textContent = data.message;
+    for (const id of ['index', 'model', 'start']) element(id).disabled = uploading || data.busy || data.ready;
+    element('open').hidden = !data.ready;
+    element('quit').disabled = uploading || data.busy;
+    if (data.ready && launching) location.href = '/';
+  } catch {
+    element('progress').textContent = 'The local app is unavailable. Reopen Ministry Search RAG from the Start menu.';
+  }
+}
+
+element('index').addEventListener('change', () => {
+  const file = element('index').files[0];
+  if (!file) return;
+  uploading = true;
+  const request = new XMLHttpRequest();
+  request.open('POST', '/setup/index');
+  request.setRequestHeader('X-Setup-Token', token);
+  request.setRequestHeader('Content-Type', 'application/octet-stream');
+  request.upload.onprogress = event => {
+    element('progress').textContent = event.lengthComputable ? `Copying collection: ${Math.round(100 * event.loaded / event.total)}%` : 'Copying collection…';
+  };
+  request.onload = () => {
+    uploading = false;
+    const data = JSON.parse(request.responseText);
+    element('progress').textContent = data.message || data.detail;
+    if (request.status >= 400) alert(data.detail || 'Could not import this index.');
+    refresh();
+  };
+  request.onerror = () => {
+    uploading = false;
+    element('progress').textContent = 'Collection transfer failed. Try choosing the file again.';
+  };
+  request.send(file);
+  refresh();
+});
+
+element('model').addEventListener('change', showModel);
+element('start').addEventListener('click', async () => {
+  element('start').disabled = true;
+  launching = true;
+  try {
+    const response = await fetch('/setup/start', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Setup-Token': token}, body: JSON.stringify({model: element('model').value})});
+    const data = await response.json();
+    if (!response.ok) alert(data.detail || 'Could not start setup.');
+    element('progress').textContent = data.message || data.detail;
+  } catch {
+    element('progress').textContent = 'Could not reach the local app.';
+  }
+  refresh();
+});
+element('quit').addEventListener('click', async () => {
+  const response = await fetch('/setup/quit', {method:'POST', headers:{'X-Setup-Token':token}});
+  const data = await response.json();
+  element('progress').textContent = data.message || data.detail;
+});
+refresh();
+setInterval(refresh, 1000);
+</script>
+</html>

@@ -143,6 +143,11 @@ async function loadBooks() {
       verse.append(link, makeNode('small', ' · © Living Stream Ministry'));
     }
     element('info').textContent = `${data.books.length} title labels · ${data.chunks.toLocaleString()} searchable passages · ${data.model} · answers stay on this PC`;
+    if (data.desktop) {
+      const setup = makeNode('a', 'Setup / Quit app');
+      setup.href = '/setup';
+      element('info').append(document.createTextNode(' � '), setup);
+    }
     for (const title of data.books) {
       const option = makeNode('option', title);
       option.value = title;

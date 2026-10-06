@@ -5,7 +5,16 @@ a small local model to explain them with numbered sources. The books stay on
 your computer. This repository contains the application code and documentation;
 you supply the collection.
 
-## Try it
+## Desktop download
+
+For setup without Python or terminal commands, use the
+[desktop installer previews](https://github.com/datdatasciguy/ministry-rag-lab/releases).
+Windows x64 and Mac Apple Silicon/Intel packages bundle the app runtime.
+You still supply a private collection index and install the local model runtime.
+See [desktop setup](docs/desktop_install.md) for the first-run steps and preview
+limitations.
+
+## Run from source
 
 Python 3.11+ and [Ollama](https://ollama.com/) for model features.
 

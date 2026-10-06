@@ -4,7 +4,8 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 FILES = ["LICENSE", "README.md", "requirements.txt", "app.py", "archive_books.py", "bible_html.py",
          "catalog.py", "ingest.py", "local_model.py", "model_options.py", "setup.py", "rag.py", "search.py", "package_app.py",
-         "web/index.html", "web/app.js", "docs/model_and_retrieval.md", "docs/sharing.md", "docs/models.md"]
+         "launcher.py", "build_installer.py", "installer/windows.iss", ".github/workflows/installers.yml",
+         "web/index.html", "web/app.js", "web/setup.html", "docs/model_and_retrieval.md", "docs/sharing.md", "docs/models.md", "docs/desktop_install.md"]
 
 def package(output):
     root = Path(__file__).resolve().parent

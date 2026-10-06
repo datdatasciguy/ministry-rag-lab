@@ -1,5 +1,9 @@
 # Let a friend try it
 
+The easiest route is the [desktop installer](desktop_install.md) plus a privately
+supplied index that the recipient is permitted to use. It bundles Python and
+Python dependencies. The manual source setup below remains available.
+
 Send the GitHub link or a code-only ZIP prepared by `package_app.py`. They also
 need Python 3.11+, Ollama for model features, and a collection they are permitted
 to use. GitHub does not contain the books, Bible, footnotes, your index, or models.
@@ -29,7 +33,7 @@ suggestion is 1.7B for a basic laptop; they can choose smaller or larger. See
 [the full model guide](models.md). Run setup again to add another model; the
 interface switches among installed choices. A GPU improves speed; CPU inference
 can be slow. Leave room for model downloads and the collection/index. The full index
-on the developer's PC is about 1.3 GB, plus roughly 0.75 GB for cached vectors
+on the developer's PC is about 1.65 GB, plus roughly 0.75 GB for cached vectors
 when loaded; the model and other Python allocations require additional memory.
 A smaller collection requires less storage and vector memory.
 

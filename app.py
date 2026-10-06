@@ -28,7 +28,7 @@ class Query(BaseModel):
     answer_words: int = Field(default=250, ge=50, le=1500)
     model: str = Field(default="", max_length=120)
 
-def create_app(index_path, model):
+def create_app(index_path, model, desktop=False):
     index = SearchIndex(index_path)
     app = FastAPI(title="Ministry Search RAG", docs_url=None, redoc_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
@@ -55,7 +55,7 @@ def create_app(index_path, model):
         return {"books": index.titles(), "chunks": index.manifest["chunks"],
                 "hybrid": bool(index.manifest["embedding_model"]), "model": model,
                 "verified_authors": len(index.authors), "collections": index.collections,
-                "display_verse": index.manifest.get("display_verse")}
+                "display_verse": index.manifest.get("display_verse"), "desktop": desktop}
 
     @app.post("/api/query")
     def query(body: Query):
