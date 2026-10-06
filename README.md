@@ -26,6 +26,10 @@ Validation checks citation bounds, quotation text, unsupported-answer citations 
 
 If a draft admits missing direct evidence but still offers a cited answer, strict mode rejects it. With separate extrapolation enabled, you can inspect that draft in the warning box instead. Citation markers are removed, supporting citations are empty, and the retrieved source cards remain available for comparison. This does not validate the draft as ministry teaching.
 
+Answers distinguish direct support, related background teachings and no useful evidence. Related teachings can have citations for their broader principles while acknowledging they do not establish the specific conclusion. Any application beyond those principles belongs in the separate opt-in extrapolation section. If the draft mixes them, the app tries one separation pass and otherwise shows the rejected draft only as unverified extrapolation.
+
+Searches mentioning masturbation also retrieve the background topics sexual immorality, fornication, sexual purity and self-control. The UI reports these extra topics. This is a limited, explicit query expansion, not a declaration that the conduct belongs to any particular category. Existing collection, book and author filters still apply.
+
 ## Run from source
 
 Python 3.11+ and [Ollama](https://ollama.com/) for model features.

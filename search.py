@@ -21,6 +21,12 @@ def retrieval_question(question):
     match = re.match(r"^(?:what|how)\s+(?:does|did|do)\s+.+?\s+(?:say|teach|write|explain)\s+(?:about|on)\s+(.+)", question.strip(), re.I)
     return match.group(1).strip(" ?.!") if match else question.strip()
 
+def related_topics(question):
+    # Related search topics are background, not a classification of the conduct.
+    if re.search(r"\bmasturbat(?:ion|ing|e|es)\b", question, re.I):
+        return ["sexual immorality", "fornication", "sexual purity", "self-control"]
+    return []
+
 def verse_reference(question):
     for code, name in BOOKS.items():
         match = re.search(r"(?<!\w)(?:" + re.escape(name) + "|" + re.escape(code) + r")\.?\s+(\d+):(\d+)\b", question, re.I)
@@ -211,6 +217,9 @@ class SearchIndex:
             return []
         eligible_titles = set(titles)
         focused = retrieval_question(question)
+        topics = related_topics(question)
+        if topics:
+            focused += " " + " ".join(topics)
         reference = verse_reference(question)
         terms = [word for word in re.findall(r"\w+", focused.casefold()) if word not in STOPWORDS]
         scores = Counter()

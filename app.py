@@ -12,7 +12,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from local_model import generate, request as model_request
 from model_options import PROFILES, read_settings
-from search import SearchIndex
+from search import SearchIndex, related_topics
 from catalog import author_scope
 
 class Query(BaseModel):
@@ -64,10 +64,11 @@ def create_app(index_path, model, desktop=False):
             hits = index.search(body.question, body.mode, body.answer_sources if body.answer else body.limit, body.book, body.author, body.collection)
             scope = author_scope(body.question, body.author)
             counts = dict(Counter(hit["kind"] for hit in hits))
+            related = related_topics(body.question)
             if body.answer and hits:
                 selected_model = body.model or model
-                return {**generate(body.question, hits, selected_model, body.answer_length, body.answer_words, body.allow_extrapolation), "scope": scope, "collection": body.collection, "answer_sources": len(hits), "source_counts": counts}
-            return {"sources": hits, "answer": "No matching passages found in this scope." if not hits else "", "citations": [], "abstain": not hits, "scope": scope, "collection": body.collection, "source_counts": counts}
+                return {**generate(body.question, hits, selected_model, body.answer_length, body.answer_words, body.allow_extrapolation), "scope": scope, "collection": body.collection, "answer_sources": len(hits), "source_counts": counts, "related_topics": related}
+            return {"sources": hits, "answer": "No matching passages found in this scope." if not hits else "", "citations": [], "abstain": not hits, "scope": scope, "collection": body.collection, "source_counts": counts, "related_topics": related}
         except (ValueError, RuntimeError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 

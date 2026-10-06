@@ -329,10 +329,11 @@ async function submitQuery(event) {
     if (!response.ok) throw Error(typeof data.detail === 'string' ? data.detail : 'Please check your question.');
     if (data.answer) {
       const panel = makeNode('section', '', 'answer');
-      panel.append(makeNode('h3', data.abstain ? 'More evidence needed' : 'Answer'));
+      panel.append(makeNode('h3', data.abstain ? 'More evidence needed' : data.support_level === 'background' ? 'Related source teachings — broader principles' : 'Answer'));
+      if (data.support_level === 'background') panel.append(makeNode('p', 'These passages support related teachings. They do not directly establish an answer to your specific question; any application beyond them belongs in the separate extrapolation section.', 'muted'));
       panel.append(renderAnswer(data.answer, data.sources.length));
       if (data.citations?.length) {
-        const citations = makeNode('p', 'Supporting passages: ', 'muted');
+        const citations = makeNode('p', data.support_level === 'background' ? 'Sources for these broader teachings: ' : 'Supporting passages: ', 'muted');
         data.citations.forEach((number, index) => {
           if (index) citations.append(document.createTextNode(', '));
           const link = citationLink(number);
@@ -358,7 +359,8 @@ async function submitQuery(event) {
     const collection = {all: 'Everything', balanced: 'Balanced sources', ministry: 'Ministry books', bible: 'Bible verses only', notes: 'Bible footnotes only'}[data.collection];
     const counts = data.source_counts || {};
     const balance = data.collection === 'balanced' ? ` · ${counts.ministry || 0} ministry / ${counts.bible || 0} Bible / ${counts.notes || 0} footnotes` : '';
-    element('status').textContent = `${data.sources.length} passages found · ${collection} · ${scope}${balance}. Check the sources before relying on a generated answer.`;
+    const related = data.related_topics?.length ? ` Related topics also searched: ${data.related_topics.join(', ')}. These are background topics, not a classification of the specific conduct.` : '';
+    element('status').textContent = `${data.sources.length} passages found · ${collection} · ${scope}${balance}.${related} Check the sources before relying on a generated answer.`;
   } catch (error) {
     element('status').className = 'error';
     element('status').textContent = error.message;
