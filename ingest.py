@@ -5,6 +5,8 @@ from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 
+from archive_books import read_archive
+
 class TextHTML(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -50,7 +52,10 @@ def read_sources(roots):
                 continue
             raw = path.read_bytes()
             files.append({"path": str(path), "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)})
-            if path.suffix.lower() == ".jsonl":
+            if path.suffix.lower() == ".zip":
+                rows, records = read_archive(path)
+                files[-1]["members"] = records
+            elif path.suffix.lower() == ".jsonl":
                 rows = []
                 for line in raw.decode("utf-8-sig").splitlines():
                     if line.strip():

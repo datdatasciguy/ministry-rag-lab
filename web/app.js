@@ -11,6 +11,11 @@ function showSource(source, number) {
   const card = makeNode('section', '', 'source');
   card.append(makeNode('h3', `${number}. ${source.title}`));
   card.append(makeNode('p', source.heading, 'muted'));
+  const pages = (source.pages || []).filter(page => page !== null);
+  if (pages.length) {
+    const label = source.url ? 'Source pages' : 'Export pages';
+    card.append(makeNode('p', `${label}: ${[...new Set(pages)].join('–')}`, 'muted'));
+  }
   card.append(makeNode('p', source.text, 'text'));
   if (source.url) {
     try {
@@ -32,7 +37,7 @@ async function loadBooks() {
     const response = await fetch('/api/books');
     if (!response.ok) throw Error('Collection unavailable');
     const data = await response.json();
-    element('info').textContent = `${data.books.length} books · ${data.chunks.toLocaleString()} searchable passages · answers stay on this PC`;
+    element('info').textContent = `${data.books.length} books · ${data.chunks.toLocaleString()} searchable passages · ${data.model} · answers stay on this PC`;
     for (const title of data.books) {
       const option = makeNode('option', title);
       option.value = title;

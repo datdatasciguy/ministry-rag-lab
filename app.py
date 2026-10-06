@@ -46,7 +46,7 @@ def create_app(index_path, model):
     @app.post("/api/query")
     def query(body: Query):
         try:
-            hits = index.search(body.question, body.mode, 4, body.book)
+            hits = index.search(body.question, body.mode, 8 if body.answer else 6, body.book)
             if body.answer and hits:
                 return generate(body.question, hits, model)
             return {"sources": hits, "answer": "No matching passages found." if not hits else "", "citations": [], "abstain": not hits}

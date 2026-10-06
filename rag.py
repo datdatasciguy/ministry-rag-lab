@@ -12,6 +12,7 @@ def main():
     build.add_argument("--source", action="append", required=True)
     build.add_argument("--index", required=True)
     build.add_argument("--embedding-model")
+    build.add_argument("--resume", action="store_true")
     for name in ("search", "ask"):
         query = commands.add_parser(name)
         query.add_argument("question")
@@ -24,7 +25,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "build":
-            result = build_index(args.source, args.index, args.embedding_model)
+            result = build_index(args.source, args.index, args.embedding_model, resume=args.resume)
         else:
             hits = SearchIndex(args.index).search(args.question, args.mode, args.limit, args.book)
             result = generate(args.question, hits, args.model) if args.command == "ask" and hits else {"sources": hits}
