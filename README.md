@@ -14,6 +14,12 @@ You still supply a private collection index and install the local model runtime.
 See [desktop setup](docs/desktop_install.md) for the first-run steps and preview
 limitations.
 
+## Reading controls
+
+Quick, Standard and Detailed presets set the answer length and source count to fit your selected model. Keep Collection visible to choose ministry, Bible, footnotes or balanced evidence. Open Advanced for book and author filters, model selection, search mode and exact limits. Changing a numeric limit marks the preset as Custom.
+
+Answers render headings, lists, emphasis and inline passage citations. Click a reference such as [14] to jump to its numbered source card, then expand context for more surrounding text. Model text is rendered as text and safe formatting, never executable HTML.
+
 ## Run from source
 
 Python 3.11+ and [Ollama](https://ollama.com/) for model features.

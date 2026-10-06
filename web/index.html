@@ -14,6 +14,10 @@ select,input{box-sizing:border-box;max-width:100%}
 .source-column{min-width:0}.source-column h2{font:600 22px system-ui}.source:target{outline:2px solid #315e49;scroll-margin-top:20px}
 @media(max-width:700px){.source-columns{grid-template-columns:1fr}}
 :root{font-family:system-ui;color:#253129;background:#f5f4ed}body{max-width:1000px;margin:48px auto;padding:0 24px}h1{font-family:Georgia,serif;font-size:42px;margin-bottom:8px}.muted{color:#667369}form,.answer,.source{background:white;border:1px solid #d9dfd5;padding:22px;border-radius:12px;margin:16px 0}textarea{box-sizing:border-box;width:100%;padding:14px;font:inherit;border:1px solid #b8c4b8;border-radius:6px;resize:vertical}select,button{font:inherit;padding:10px;border-radius:6px;margin:12px 8px 0 0;border:1px solid #b8c4b8}button{background:#315e49;color:white;cursor:pointer}button:disabled{opacity:.5}.text{white-space:pre-wrap;line-height:1.6}a{color:#315e49}h3{margin-top:0}.error{color:#8c2727}label{display:inline-block;margin-right:12px}
+
+.basic-controls{display:flex;flex-wrap:wrap;gap:12px}.basic-controls label{flex:1;min-width:220px;margin:0}.basic-controls select{display:block;width:100%;margin-right:0}
+details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{cursor:pointer;color:#315e49;font-weight:600}.advanced-controls{padding-top:10px}
+.answer-body{line-height:1.65}.answer-body p{margin:14px 0}.answer-body h3,.answer-body h4,.answer-body h5,.answer-body h6{margin:22px 0 8px;font-size:1.1em}.answer-body li{margin:8px 0}.answer-body blockquote{border-left:3px solid #b8c4b8;margin:16px 0;padding-left:16px}.answer-body pre{white-space:pre-wrap}.answer-body code{background:#f5f4ed;padding:2px 4px}.citation{white-space:nowrap;font-weight:600;scroll-margin-top:20px}.source:focus{outline:2px solid #315e49}
 </style>
 <h1>Ministry Search RAG</h1>
 <blockquote id="verse" hidden></blockquote>
@@ -21,9 +25,16 @@ select,input{box-sizing:border-box;max-width:100%}
 <p id="info" class="muted">Loading collection…</p>
 <form id="search">
 <textarea id="question" rows="3" maxlength="2000" placeholder="What would you like to find?" required></textarea>
+<div class="basic-controls">
+<label>Collection <select id="collection"><option value="all">Everything</option><option value="balanced">Balanced · Bible + footnotes / ministry</option><option value="ministry">Ministry books</option><option value="bible">Bible verses</option><option value="notes">Bible footnotes</option></select></label>
+<label>Preset <select id="preset"><option value="quick">Quick · short and direct</option><option value="standard" selected>Standard · a few paragraphs</option><option value="detailed">Detailed · explore more sources</option><option value="custom" disabled>Custom · advanced settings</option></select></label>
+</div>
+<p id="preset-help" class="muted"></p>
+<details id="advanced"><summary>Advanced · filters, model and exact limits</summary>
+<div class="advanced-controls">
 <label class="book-control">Book <select id="book"><option value="">All books</option></select></label>
 <label>Author <select id="author"><option value="auto">From your question</option><option value="all">Whole ministry / all authors</option><option>Witness Lee</option><option>Watchman Nee</option></select></label>
-<label>Collection <select id="collection"><option value="all">Everything</option><option value="balanced">Balanced · Bible + footnotes / ministry</option><option value="ministry">Ministry books</option><option value="bible">Bible verses</option><option value="notes">Bible footnotes</option></select></label>
+
 <p class="muted">Balanced reserves about half the sources for ministry and half for Bible verses plus footnotes. Book and author filters apply to the ministry side.</p>
 <label>Search <select id="mode"><option value="lexical">Words and phrases</option><option value="hybrid" id="hybrid">Words + meaning</option></select></label>
 <div><label>Search results <input id="limit" type="number" min="1" max="100" value="6" required style="width:65px;padding:8px;font:inherit"></label>
@@ -35,6 +46,7 @@ select,input{box-sizing:border-box;max-width:100%}
 <label id="custom-length" hidden>Word target <input id="answer-words" type="number" min="50" max="1500" value="250" required style="width:75px;padding:8px;font:inherit"></label>
 <p class="muted">Length targets are approximate. Answers stay grounded in the selected sources and may be shorter when there is less to explain.</p>
 <p class="muted">Yellow highlights show query word matches. Expanded context marks the retrieved passage in green. Meaning ranks compare whole passages.</p>
+</div></details>
 <div><button type="submit" data-answer="false">Find passages</button><button type="submit" data-answer="true">Answer from passages</button></div>
 </form>
 <p id="status" role="status"></p><div id="answer"></div><div id="results"></div>

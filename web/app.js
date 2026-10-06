@@ -9,6 +9,114 @@ function makeNode(tag, text, className) {
   return node;
 }
 
+
+function citationLink(number) {
+  const link = makeNode('a', '[' + number + ']', 'citation');
+  link.href = '#source-' + number;
+  link.setAttribute('aria-label', 'Read supporting passage ' + number);
+  link.addEventListener('click', () => {
+    const source = element('source-' + number);
+    if (source) source.focus({preventScroll: true});
+  });
+  return link;
+}
+
+function appendInline(node, text, sourceCount) {
+  // Build DOM nodes so model text cannot inject HTML or external links.
+  const pattern = /\[(\d+(?:\s*,\s*\d+)*)\]|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_|`([^`\n]+)`/g;
+  let end = 0;
+  for (const match of text.matchAll(pattern)) {
+    node.append(document.createTextNode(text.slice(end, match.index)));
+    if (match[1]) {
+      const numbers = match[1].split(',').map(Number);
+      if (numbers.every(number => number >= 1 && number <= sourceCount)) {
+        numbers.forEach((number, index) => {
+          if (index) node.append(document.createTextNode(' '));
+          node.append(citationLink(number));
+        });
+      } else node.append(document.createTextNode(match[0]));
+    } else {
+      const tag = match[2] || match[3] ? 'strong' : match[6] ? 'code' : 'em';
+      const child = makeNode(tag, '');
+      if (tag === 'code') child.textContent = match[6];
+      else appendInline(child, match[2] || match[3] || match[4] || match[5], sourceCount);
+      node.append(child);
+    }
+    end = match.index + match[0].length;
+  }
+  node.append(document.createTextNode(text.slice(end)));
+}
+
+function renderAnswer(text, sourceCount) {
+  const body = makeNode('div', '', 'answer-body');
+  let block = null;
+  let list = null;
+  let fenced = false;
+  for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+      block = fenced ? makeNode('pre', '') : null;
+      if (block) body.append(block);
+      list = null;
+      continue;
+    }
+    if (fenced) {
+      block.append(document.createTextNode(line + '\n'));
+      continue;
+    }
+    if (!line.trim()) { block = null; list = null; continue; }
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*$/);
+    const item = line.match(/^\s*(?:([-*+])|\d+[.)])\s+(.+)$/);
+    const quote = line.match(/^\s*>\s?(.*)$/);
+    if (heading) {
+      const node = makeNode('h' + Math.min(heading[1].length + 2, 6), '');
+      appendInline(node, heading[2], sourceCount);
+      body.append(node);
+      block = null; list = null;
+    } else if (item) {
+      const tag = item[1] ? 'ul' : 'ol';
+      if (!list || list.localName !== tag) {
+        list = makeNode(tag, '');
+        body.append(list);
+      }
+      const node = makeNode('li', '');
+      appendInline(node, item[2], sourceCount);
+      list.append(node);
+      block = null;
+    } else {
+      const tag = quote ? 'blockquote' : 'p';
+      if (!block || block.localName !== tag) {
+        block = makeNode(tag, '');
+        body.append(block);
+      } else block.append(document.createTextNode(' '));
+      appendInline(block, quote ? quote[1] : line, sourceCount);
+      list = null;
+    }
+  }
+  return body;
+}
+
+function applyPreset() {
+  const presets = {
+    quick: {sources: 4, results: 6, length: 'short'},
+    standard: {sources: 8, results: 12, length: 'medium'},
+    detailed: {sources: 16, results: 24, length: 'detailed'}
+  };
+  const preset = presets[element('preset').value];
+  if (!preset) return;
+  const profile = modelProfiles.find(row => row.model === (element('model').value || defaultModel));
+  element('limit').value = preset.results;
+  element('answer-sources').value = Math.min(preset.sources, profile?.sources || 8);
+  element('answer-length').value = preset.length === 'detailed' && profile?.words < 600 ? 'medium' : preset.length;
+  element('custom-length').hidden = true;
+  updatePresetHelp();
+}
+
+function updatePresetHelp() {
+  const words = {short: 100, medium: 250, detailed: 600, custom: Number(element('answer-words').value)};
+  element('preset-help').textContent = `${element('limit').value} search results · up to ${element('answer-sources').value} answer sources · about ${words[element('answer-length').value]} words. Presets fit the selected model.`;
+}
+
 function highlightedText(tag, text, terms = [], passage = '') {
   const node = makeNode(tag, '', 'text');
   const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -193,6 +301,7 @@ async function loadModels() {
     }
     if (modelProfiles.some(profile => profile.model === data.default && profile.installed)) element('model').value = data.default;
     selectModel();
+    applyPreset();
     if (data.notice) element('model-help').textContent = data.notice;
   } catch {
     element('model-help').textContent = 'Model choices unavailable. The server default remains selected.';
@@ -221,13 +330,12 @@ async function submitQuery(event) {
     if (data.answer) {
       const panel = makeNode('section', '', 'answer');
       panel.append(makeNode('h3', data.abstain ? 'More evidence needed' : 'Answer'));
-      panel.append(makeNode('p', data.answer, 'text'));
+      panel.append(renderAnswer(data.answer, data.sources.length));
       if (data.citations?.length) {
         const citations = makeNode('p', 'Supporting passages: ', 'muted');
         data.citations.forEach((number, index) => {
           if (index) citations.append(document.createTextNode(', '));
-          const link = makeNode('a', '[' + number + ']');
-          link.href = '#source-' + number;
+          const link = citationLink(number);
           citations.append(link);
         });
         panel.append(citations);
@@ -252,7 +360,7 @@ async function submitQuery(event) {
 }
 
 element('search').addEventListener('submit', submitQuery);
-for (const id of ['book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model']) {
+for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model']) {
   element(id).addEventListener('change', () => {
     element('answer').replaceChildren();
     element('results').replaceChildren();
@@ -263,5 +371,13 @@ element('answer-length').addEventListener('change', () => {
   element('custom-length').hidden = element('answer-length').value !== 'custom';
 });
 loadBooks();
-element('model').addEventListener('change', selectModel);
+element('model').addEventListener('change', () => { selectModel(); applyPreset(); updatePresetHelp(); });
+element('preset').addEventListener('change', applyPreset);
+for (const id of ['mode', 'limit', 'answer-sources', 'answer-length', 'answer-words']) {
+  element(id).addEventListener('change', () => {
+    element('preset').value = 'custom';
+    updatePresetHelp();
+  });
+}
+applyPreset();
 loadModels();
