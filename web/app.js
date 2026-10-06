@@ -146,7 +146,7 @@ async function loadBooks() {
     if (data.desktop) {
       const setup = makeNode('a', 'Setup / Quit app');
       setup.href = '/setup';
-      element('info').append(document.createTextNode(' · '), setup);
+      element('info').append(document.createTextNode(' Â· '), setup);
     }
     for (const title of data.books) {
       const option = makeNode('option', title);

@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 import webbrowser
+from contextlib import closing
 from pathlib import Path
 import platform
 from urllib.request import ProxyHandler, Request, build_opener
@@ -29,7 +30,7 @@ def check_index(path):
     path = Path(path).resolve()
     if not path.is_file():
         raise ValueError('Choose a complete SQLite collection index.')
-    with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True) as db:
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)) as db:
         manifest = json.loads(db.execute("SELECT value FROM metadata WHERE name='manifest'").fetchone()[0])
         if not manifest.get('complete'):
             raise ValueError('This collection index is unfinished.')
