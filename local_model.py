@@ -37,6 +37,11 @@ def embed(texts, model, query=False):
     result = request("/api/embed", {"model": model, "input": [prefix + text for text in texts], "truncate": False})
     return result["embeddings"]
 
+class UnsupportedAnswer(ValueError):
+    def __init__(self, draft):
+        super().__init__("Model acknowledged missing direct evidence but still gave a cited answer. Enable separate extrapolation to inspect the unverified draft, or try more specific wording or more sources.")
+        self.draft = draft
+
 def validate_answer(answer, sources, allow_extrapolation=False, question=""):
     allowed = set(range(1, len(sources) + 1))
     citations = answer.get("citations", [])
@@ -54,8 +59,6 @@ def validate_answer(answer, sources, allow_extrapolation=False, question=""):
     no_support = re.search(
         r"(?:not|isn't|aren't|does not|do not)\s+(?:directly|explicitly)\s+"
         r"(?:address|discuss|mention|support|explain|define|establish)", answer["answer"], re.I)
-    if no_support and not answer["abstain"]:
-        raise ValueError("Model acknowledged missing direct evidence but still gave a cited answer. Try more specific wording or more sources.")
     inline = re.findall(r"\[(\d+(?:\s*,\s*\d+)*)\]", answer["answer"])
     if answer["abstain"] and inline:
         raise ValueError("An unsupported answer cannot contain direct-evidence citation links")
@@ -70,11 +73,21 @@ def validate_answer(answer, sources, allow_extrapolation=False, question=""):
     phrases.extend(left or right for left, right in re.findall(r"(?<!\w)'([^\n]+?)'(?!\w)|‘([^’]+)’", answer["answer"]))
     if any(not any(normalize_quote(phrase) in text for text in supplied) for phrase in phrases):
         raise ValueError("Model returned a quotation not found in the supplied passages")
+    if no_support and not answer["abstain"]:
+        raise UnsupportedAnswer(answer)
     if not answer["answer"].strip() or (not answer["abstain"] and not citations):
         raise ValueError("Model answer has no supporting citations")
     answer["citations"] = list(dict.fromkeys(citations))
     answer["extrapolation"] = extrapolation.strip()
     return answer
+
+def inspect_extrapolation(draft):
+    # Remove evidence markers before exposing a rejected draft as speculation.
+    strip_citations = lambda text: re.sub(r"\[\s*\d+(?:\s*[,–-]\s*\d+)*\s*\]", "", text).strip()
+    parts = [strip_citations(draft["answer"]), strip_citations(draft.get("extrapolation", ""))]
+    return {"answer": "The model's draft failed the direct-evidence check. No source-supported answer is available from this draft.",
+            "abstain": True, "citations": [], "extrapolation": "\n\n".join(part for part in parts if part),
+            "extrapolation_warning": "Unverified model draft: it acknowledged missing direct evidence. Its citation markers were removed. Read this as speculation, not as a statement of the ministry."}
 
 def generate(question, hits, model, length="medium", words=250, allow_extrapolation=False):
     if not hits:
@@ -157,6 +170,10 @@ def generate(question, hits, model, length="medium", words=250, allow_extrapolat
     result = request("/api/generate", payload)
     try:
         answer = validate_answer(json.loads(result["response"]), sources, allow_extrapolation, question)
+    except UnsupportedAnswer as error:
+        if not allow_extrapolation:
+            raise
+        answer = inspect_extrapolation(error.draft)
     except json.JSONDecodeError as error:
         raise ValueError("The local model did not finish a valid answer. Try fewer sources or a shorter answer.") from error
     if target >= 400 and not answer["abstain"] and len(answer["answer"].split()) < target * 0.7:

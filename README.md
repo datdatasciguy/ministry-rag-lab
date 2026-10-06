@@ -24,6 +24,8 @@ Answers require direct support for the actual question. Related themes alone do 
 
 Validation checks citation bounds, quotation text, unsupported-answer citations and explicit admissions of missing direct support. These checks do not prove that every claim follows from its passage; model errors remain possible. The local check for the reported ambiguous term and a supported life question is a focused check, not a general accuracy benchmark.
 
+If a draft admits missing direct evidence but still offers a cited answer, strict mode rejects it. With separate extrapolation enabled, you can inspect that draft in the warning box instead. Citation markers are removed, supporting citations are empty, and the retrieved source cards remain available for comparison. This does not validate the draft as ministry teaching.
+
 ## Run from source
 
 Python 3.11+ and [Ollama](https://ollama.com/) for model features.

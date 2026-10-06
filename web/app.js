@@ -348,6 +348,7 @@ async function submitQuery(event) {
         const reflection = makeNode('section', '', 'answer extrapolation');
         reflection.append(makeNode('h3', 'Extrapolation — not directly supported by the retrieved passages'));
         reflection.append(makeNode('p', 'Model speculation, not a statement of the ministry or direct source evidence.', 'muted'));
+        if (data.extrapolation_warning) reflection.append(makeNode('p', data.extrapolation_warning, 'error'));
         reflection.append(renderAnswer(data.extrapolation, 0));
         element('answer').append(reflection);
       }
