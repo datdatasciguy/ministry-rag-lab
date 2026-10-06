@@ -7,19 +7,71 @@ function makeNode(tag, text, className) {
   return node;
 }
 
+function highlightedText(tag, text, terms = [], passage = '') {
+  const node = makeNode(tag, '', 'text');
+  const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patterns = [];
+  if (passage) patterns.push(escape(passage));
+  if (terms.length) patterns.push('\\b(?:' + terms.map(escape).join('|') + ')\\b');
+  if (!patterns.length) {
+    node.textContent = text;
+    return node;
+  }
+  let end = 0;
+  for (const match of text.matchAll(new RegExp(patterns.join('|'), 'gi'))) {
+    node.append(document.createTextNode(text.slice(end, match.index)));
+    const mark = makeNode('mark', match[0]);
+    if (passage && match[0].toLowerCase() === passage.toLowerCase()) mark.className = 'retrieved';
+    node.append(mark);
+    end = match.index + match[0].length;
+  }
+  node.append(document.createTextNode(text.slice(end)));
+  return node;
+}
+
 function showSource(source, number) {
   const card = makeNode('section', '', 'source');
-  card.append(makeNode('h3', `${number}. ${source.title}`));
-  card.append(makeNode('p', source.heading, 'muted'));
+  card.append(highlightedText('h3', `${number}. ${source.title}`, source.matched_terms));
+  const heading = highlightedText('p', source.heading, source.matched_terms);
+  heading.classList.add('muted');
+  card.append(heading);
+  const attribution = source.kind === 'bible' ? 'Bible text · Recovery Version' : source.kind === 'notes' ? 'Footnote commentary · Recovery Version' : 'Ministry · ' + (source.author === 'Unverified' ? 'Authorship not verified' : source.author);
+  card.append(makeNode('p', attribution, 'muted'));
+  const labels = {words: 'Words', meaning: 'Meaning', reference: 'Verse reference'};
+  card.append(makeNode('p', Object.entries(source.retrieval_ranks || {}).map(([kind, rank]) => `${labels[kind]} rank ${rank}`).join(' · '), 'muted'));
   const pages = (source.pages || []).filter(page => page !== null);
   if (pages.length) {
     const label = source.url ? 'Source pages' : 'Export pages';
     card.append(makeNode('p', `${label}: ${[...new Set(pages)].join('–')}`, 'muted'));
   }
-  card.append(makeNode('p', source.text, 'text'));
+  card.append(highlightedText('p', source.text, source.matched_terms));
+  const expanded = makeNode('div', '', 'context');
+  const expand = makeNode('button', 'Expand context');
+  expand.type = 'button';
+  let words = 300;
+  expand.addEventListener('click', async () => {
+    expand.disabled = true;
+    try {
+      const response = await fetch(`/api/context/${encodeURIComponent(source.id)}?words=${words}`);
+      const data = await response.json();
+      if (!response.ok) throw Error(data.detail || 'Context unavailable');
+      expanded.replaceChildren(makeNode('p', 'Surrounding text from this book. Expanded context is for reading; it does not change the generated answer.', 'muted'));
+      for (const section of data.sections) {
+        expanded.append(makeNode('h4', section.heading || source.title), highlightedText('p', section.text, source.matched_terms, source.text));
+      }
+      const limit = words === 8100;
+      words = Math.min(words * 3, 8100);
+      expand.textContent = data.more ? (limit ? 'Context limit shown' : 'Show more before and after') : 'Full available context shown';
+      expand.disabled = !data.more || limit;
+    } catch (error) {
+      expanded.replaceChildren(makeNode('p', error.message, 'error'));
+      expand.disabled = false;
+    }
+  });
+  card.append(expand, expanded);
   if (source.url) {
     try {
-      const url = new URL(source.url);
+      const url = new URL(source.url, location.origin);
       if (['http:', 'https:'].includes(url.protocol)) {
         const link = makeNode('a', 'Open source');
         link.href = url.href;
@@ -37,7 +89,15 @@ async function loadBooks() {
     const response = await fetch('/api/books');
     if (!response.ok) throw Error('Collection unavailable');
     const data = await response.json();
-    element('info').textContent = `${data.books.length} books · ${data.chunks.toLocaleString()} searchable passages · ${data.model} · answers stay on this PC`;
+    if (data.display_verse) {
+      const verse = element('verse');
+      verse.hidden = false;
+      verse.append(makeNode('p', data.display_verse.text));
+      const link = makeNode('a', data.display_verse.reference + ' · Recovery Version');
+      link.href = '/api/reference/' + data.display_verse.section_id;
+      verse.append(link, makeNode('small', ' · © Living Stream Ministry'));
+    }
+    element('info').textContent = `${data.books.length} title labels · ${data.chunks.toLocaleString()} searchable passages · ${data.model} · answers stay on this PC`;
     for (const title of data.books) {
       const option = makeNode('option', title);
       option.value = title;
@@ -45,6 +105,10 @@ async function loadBooks() {
     }
     element('hybrid').disabled = !data.hybrid;
     if (data.hybrid) element('mode').value = 'hybrid';
+    for (const kind of ['bible', 'notes']) {
+      element('collection').querySelector(`option[value="${kind}"]`).disabled = !Object.values(data.collections).includes(kind);
+    }
+    element('collection').querySelector('option[value="balanced"]').disabled = !['bible', 'notes'].every(kind => Object.values(data.collections).includes(kind));
   } catch {
     element('info').textContent = 'Could not load the collection.';
   }
@@ -57,12 +121,15 @@ async function submitQuery(event) {
   element('status').textContent = answer ? 'Finding passages and writing a local answer…' : 'Finding passages…';
   element('answer').replaceChildren();
   element('results').replaceChildren();
-  document.querySelectorAll('button').forEach(button => button.disabled = true);
+  const controls = [...element('search').querySelectorAll('button, select, textarea, input')];
+  const disabled = controls.map(control => control.disabled);
+  const payload = {question: element('question').value, book: element('book').value, author: element('author').value, collection: element('collection').value, mode: element('mode').value, limit: Number(element('limit').value), answer_sources: Number(element('answer-sources').value), answer_length: element('answer-length').value, answer_words: Number(element('answer-words').value), answer};
+  controls.forEach(control => control.disabled = true);
   try {
     const response = await fetch('/api/query', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({question: element('question').value, book: element('book').value, mode: element('mode').value, answer})
+      body: JSON.stringify(payload)
     });
     const data = await response.json();
     if (!response.ok) throw Error(typeof data.detail === 'string' ? data.detail : 'Please check your question.');
@@ -71,17 +138,33 @@ async function submitQuery(event) {
       panel.append(makeNode('h3', data.abstain ? 'More evidence needed' : 'Answer'));
       panel.append(makeNode('p', data.answer, 'text'));
       if (data.citations?.length) panel.append(makeNode('p', 'Supporting passages: ' + data.citations.join(', '), 'muted'));
+      if (data.answer_sources) panel.append(makeNode('p', `The model received ${data.answer_sources} passages · ${data.context_tokens.toLocaleString()} token context setting.`, 'muted'));
+      if (data.target_words) panel.append(makeNode('p', `${data.answer_words} words · requested about ${data.target_words}.`, 'muted'));
       element('answer').append(panel);
     }
     data.sources.forEach((source, index) => showSource(source, index + 1));
-    element('status').textContent = `${data.sources.length} passages found. Check the sources before relying on a generated answer.`;
+    const scope = data.scope === 'all' ? 'All authors' : data.scope + (data.collection === 'balanced' ? ' · ministry authorship' : ' · verified authorship only');
+    const collection = {all: 'Everything', balanced: 'Balanced sources', ministry: 'Ministry books', bible: 'Bible verses only', notes: 'Bible footnotes only'}[data.collection];
+    const counts = data.source_counts || {};
+    const balance = data.collection === 'balanced' ? ` · ${counts.ministry || 0} ministry / ${counts.bible || 0} Bible / ${counts.notes || 0} footnotes` : '';
+    element('status').textContent = `${data.sources.length} passages found · ${collection} · ${scope}${balance}. Check the sources before relying on a generated answer.`;
   } catch (error) {
     element('status').className = 'error';
     element('status').textContent = error.message;
   } finally {
-    document.querySelectorAll('button').forEach(button => button.disabled = false);
+    controls.forEach((control, index) => control.disabled = disabled[index]);
   }
 }
 
 element('search').addEventListener('submit', submitQuery);
+for (const id of ['book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words']) {
+  element(id).addEventListener('change', () => {
+    element('answer').replaceChildren();
+    element('results').replaceChildren();
+    element('status').textContent = 'Scope changed. Find passages or request an answer to use this selection.';
+  });
+}
+element('answer-length').addEventListener('change', () => {
+  element('custom-length').hidden = element('answer-length').value !== 'custom';
+});
 loadBooks();

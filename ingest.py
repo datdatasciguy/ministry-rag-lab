@@ -89,6 +89,8 @@ def read_sources(roots):
                     "heading": " / ".join(str(row.get(k) or "") for k in ("chapter_label", "section_label")).strip(" /"),
                     "url": row.get("section_canonical_url") or row.get("section_page_url") or "",
                     "pages": [row.get("page_start"), row.get("page_end")], "text": text,
+                    "kind": row.get("kind", "ministry"), "reference": row.get("reference", ""),
+                    "note": row.get("note", ""),
                 }
     for key in conflicts:
         sections.pop(key, None)

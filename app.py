@@ -1,24 +1,34 @@
 import argparse
+import html
+from collections import Counter
+from contextlib import closing
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from local_model import generate
 from search import SearchIndex
+from catalog import author_scope
 
 class Query(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     mode: str = "lexical"
     book: str = ""
+    author: str = "auto"
+    collection: str = "all"
     answer: bool = False
+    limit: int = Field(default=6, ge=1, le=100)
+    answer_sources: int = Field(default=8, ge=1, le=40)
+    answer_length: str = Field(default="medium", pattern="^(short|medium|detailed|custom)$")
+    answer_words: int = Field(default=250, ge=50, le=1500)
 
 def create_app(index_path, model):
     index = SearchIndex(index_path)
-    app = FastAPI(title="Local book search", docs_url=None, redoc_url=None)
+    app = FastAPI(title="Ministry Search RAG", docs_url=None, redoc_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
     web = Path(__file__).parent / "web"
 
@@ -41,17 +51,39 @@ def create_app(index_path, model):
     @app.get("/api/books")
     def books():
         return {"books": index.titles(), "chunks": index.manifest["chunks"],
-                "hybrid": bool(index.manifest["embedding_model"]), "model": model}
+                "hybrid": bool(index.manifest["embedding_model"]), "model": model,
+                "verified_authors": len(index.authors), "collections": index.collections,
+                "display_verse": index.manifest.get("display_verse")}
 
     @app.post("/api/query")
     def query(body: Query):
         try:
-            hits = index.search(body.question, body.mode, 8 if body.answer else 6, body.book)
+            hits = index.search(body.question, body.mode, body.answer_sources if body.answer else body.limit, body.book, body.author, body.collection)
+            scope = author_scope(body.question, body.author)
+            counts = dict(Counter(hit["kind"] for hit in hits))
             if body.answer and hits:
-                return generate(body.question, hits, model)
-            return {"sources": hits, "answer": "No matching passages found." if not hits else "", "citations": [], "abstain": not hits}
+                return {**generate(body.question, hits, model, body.answer_length, body.answer_words), "scope": scope, "collection": body.collection, "answer_sources": len(hits), "source_counts": counts}
+            return {"sources": hits, "answer": "No matching passages found in this scope." if not hits else "", "citations": [], "abstain": not hits, "scope": scope, "collection": body.collection, "source_counts": counts}
         except (ValueError, RuntimeError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/context/{chunk_id}")
+    def context(chunk_id: str, words: int = 300):
+        try:
+            return index.context(chunk_id, words)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/reference/{section_id}")
+    def reference(section_id: str):
+        with closing(index.connect()) as db:
+            if not db.execute("SELECT name FROM sqlite_master WHERE name='reference_passages'").fetchone():
+                raise HTTPException(status_code=404, detail="No Bible references in this index")
+            row = db.execute("SELECT reference, kind, text FROM reference_passages WHERE id=?", (section_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Reference not found")
+        label, kind, text = map(html.escape, row)
+        return HTMLResponse(f'<!doctype html><meta charset="utf-8"><title>{label}</title><main style="max-width:800px;margin:48px auto;padding:24px;font:18px/1.6 system-ui"><a href="/">Ministry Search RAG</a><h1>{label}</h1><p>{kind} · Recovery Version · © Living Stream Ministry</p><p style="white-space:pre-wrap">{text}</p></main>')
 
     return app
 
