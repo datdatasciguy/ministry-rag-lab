@@ -14,6 +14,9 @@ from local_model import generate, related_searches, request as model_request
 from model_options import PROFILES, read_settings
 from search import SearchIndex, related_topics
 from catalog import author_scope
+from research import ResearchJobs
+from official_sources import official_introduction
+from question_policy import respectful_question, original_wording
 
 class Query(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
@@ -31,9 +34,20 @@ class Query(BaseModel):
     max_answer_attempts: int = Field(default=3, ge=1, le=5)
     allow_unverified_response: bool = False
     expand_related_topics: bool = True
+    answer_original: bool = False
+
+class ResearchStart(Query):
+    batch_words: int = Field(default=600, ge=100, le=1200)
+    run_minutes: int = Field(default=10, ge=0, le=1440)
+    max_batches: int = Field(default=0, ge=0, le=10000)
+
+class ResearchRun(BaseModel):
+    run_minutes: int = Field(default=10, ge=0, le=1440)
+    max_batches: int = Field(default=0, ge=0, le=10000)
 
 def create_app(index_path, model, desktop=False):
     index = SearchIndex(index_path)
+    research = ResearchJobs(index)
     app = FastAPI(title="Ministry Search RAG", docs_url=None, redoc_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
     web = Path(__file__).parent / "web"
@@ -54,6 +68,10 @@ def create_app(index_path, model, desktop=False):
     def script():
         return FileResponse(web / "app.js", media_type="application/javascript")
 
+    @app.get("/research.js")
+    def research_script():
+        return FileResponse(web / "research.js", media_type="application/javascript")
+
     @app.get("/api/books")
     def books():
         return {"books": index.titles(), "chunks": index.manifest["chunks"],
@@ -64,7 +82,23 @@ def create_app(index_path, model, desktop=False):
     @app.post("/api/query")
     def query(body: Query):
         try:
-            hits = index.search(body.question, body.mode, body.answer_sources if body.answer else body.limit, body.book, body.author, body.collection)
+            question, original = original_wording(body.question, body.answer_original)
+            body = body.model_copy(update={"question": question, "answer_original": original})
+            guidance = respectful_question(body.question, body.answer_original)
+            interpretation = {}
+            search_question = body.question
+            if guidance and guidance.get('query_rewrite'):
+                interpretation = {key: guidance[key] for key in ['interpreted_question', 'policy_notice']}
+                body = body.model_copy(update={'question': guidance['query_rewrite']})
+                search_question = guidance['search_question']
+            elif guidance:
+                return {**guidance, "scope": author_scope(body.question, body.author),
+                        "collection": body.collection, "answer_sources": 0, "source_counts": {}, "related_topics": []}
+            introduction = official_introduction(body.question, body.answer_original) if body.answer else None
+            if introduction:
+                return {**introduction, "scope": author_scope(body.question, body.author),
+                        "collection": body.collection, "answer_sources": 0, "source_counts": {}, "related_topics": []}
+            hits = index.search(search_question, body.mode, body.answer_sources if body.answer else body.limit, body.book, body.author, body.collection)
             scope = author_scope(body.question, body.author)
             counts = dict(Counter(hit["kind"] for hit in hits))
             related = related_topics(body.question)
@@ -112,9 +146,9 @@ def create_app(index_path, model, desktop=False):
                     except (ValueError, RuntimeError) as error:
                         result.setdefault("evidence_warnings", []).append("Related-topic search could not complete. The first response and its sources are shown.")
                 counts = dict(Counter(hit["kind"] for hit in result["sources"]))
-                return {**result, "scope": scope, "collection": body.collection,
+                return {**result, **interpretation, "scope": scope, "collection": body.collection,
                         "answer_sources": len(result["sources"]), "source_counts": counts, "related_topics": related}
-            return {"sources": hits, "answer": "No matching passages found in this scope." if not hits else "", "citations": [], "abstain": not hits, "scope": scope, "collection": body.collection, "source_counts": counts, "related_topics": related}
+            return {"sources": hits, **interpretation, "answer": "No matching passages found in this scope." if not hits else "", "citations": [], "abstain": not hits, "scope": scope, "collection": body.collection, "source_counts": counts, "related_topics": related}
         except (ValueError, RuntimeError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -126,6 +160,54 @@ def create_app(index_path, model, desktop=False):
             return {"default": model, "models": [{**profile, "installed": profile["model"] in installed} for profile in PROFILES]}
         except RuntimeError:
             return {"default": model, "models": [], "notice": "Start Ollama to choose installed answer models. Keyword search still works."}
+
+    def research_call(action, *args, **kwargs):
+        try:
+            return action(*args, **kwargs)
+        except (ValueError, RuntimeError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.get("/api/research")
+    def research_jobs():
+        return {"jobs": research_call(research.jobs)}
+
+    @app.post("/api/research")
+    def start_research(body: ResearchStart):
+        if respectful_question(body.question, body.answer_original):
+            raise HTTPException(status_code=400, detail="Use Answer from passages to clarify this question's wording before starting a corpus scan.")
+        if official_introduction(body.question):
+            raise HTTPException(status_code=400, detail="Use Answer from passages for the official introduction links to this question; a corpus scan is not needed.")
+        job = research_call(research.create, body.question, body.model or model, body.book,
+                            body.author, body.collection, body.batch_words)
+        return research_call(research.resume, job["id"], body.run_minutes, body.max_batches)
+
+    @app.get("/api/research/{job_id}")
+    def research_status(job_id: str):
+        return research_call(research.status, job_id)
+
+    @app.post("/api/research/{job_id}/pause")
+    def pause_research(job_id: str):
+        return research_call(research.pause, job_id)
+
+    @app.post("/api/research/{job_id}/resume")
+    def resume_research(job_id: str, body: ResearchRun):
+        return research_call(research.resume, job_id, body.run_minutes, body.max_batches)
+
+    @app.post("/api/research/{job_id}/report")
+    def summarize_research(job_id: str, body: ResearchRun):
+        return research_call(research.resume, job_id, body.run_minutes, body.max_batches, True)
+
+    @app.get("/api/research/{job_id}/findings")
+    def research_findings(job_id: str, offset: int = 0, limit: int = 50, node_id: int | None = None,
+                          finding_id: int | None = None):
+        return research_call(research.findings, job_id, offset, limit, node_id,
+                             [finding_id] if finding_id is not None else None)
+
+    @app.get("/api/research/{job_id}/source/{finding_id}")
+    def research_source(job_id: str, finding_id: int):
+        source = research_call(research.section, job_id, finding_id)
+        title, heading, author, text = (html.escape(source[key]) for key in ["title", "heading", "author", "text"])
+        return HTMLResponse(f'<!doctype html><meta charset="utf-8"><title>{title}</title><main style="max-width:850px;margin:40px auto;padding:20px;font:18px/1.6 system-ui"><a href="/">Ministry Search RAG</a><h1>{title}</h1><h2>{heading}</h2><p>{author} · Original stored section</p><p style="white-space:pre-wrap">{text}</p></main>')
 
     @app.get("/api/context/{chunk_id}")
     def context(chunk_id: str, words: int = 300):

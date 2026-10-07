@@ -32,6 +32,16 @@ Searches mentioning masturbation also retrieve the background topics sexual immo
 
 ## Run from source
 
+For questions that need a wider view, open **Deep research** below the search controls. It reads the selected collection in saved batches, collects verified excerpts, then combines small summaries into a final cited report. You can pause, resume and summarize the findings so far. Start with a short time or batch budget; a full collection run can take hours or days. See [how Deep research works](docs/deep_research.md).
+
+Finding a wife, husband, mate or spouse searches related wording together, so a different term in a book does not hide a useful passage. These extra terms broaden retrieval; the answer still needs evidence.
+
+Identity questions about Witness Lee, Watchman Nee, Living Stream Ministry and the local churches show short introductions and verified official or associated links. Questions about controversies defer to their own statements and the Defense and Confirmation Project, clearly labeled as their presentation. Teaching questions continue through the local RAG. The app does not generate biographies or decide allegations from a small passage sample.
+
+General label questions such as **What is a cult?** also show an introduction to stated faith and church life, rather than making accusations the introduction. This tool does not classify religious groups from retrieved snippets.
+
+[Reviewed website references](docs/website_sources.md) can be added to a new local index. Relevant LSM, DCP, A Faithful Word and localchurches.org pages receive a limited retrieval preference, with targeted introductions and FAQs prioritized for common questions. Website publisher labels distinguish these from individual authors' books. Downloaded text stays local.
+
 Python 3.11+ and [Ollama](https://ollama.com/) for model features.
 
 ```bash

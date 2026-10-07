@@ -17,6 +17,7 @@ select,input{box-sizing:border-box;max-width:100%}
 
 .basic-controls{display:flex;flex-wrap:wrap;gap:12px}.basic-controls label{flex:1;min-width:220px;margin:0}.basic-controls select{display:block;width:100%;margin-right:0}
 .scope-warning{background:#fff5d6;border-left:4px solid #ad790f;padding:16px;margin-bottom:18px;line-height:1.6}.scope-warning strong{display:block;font-size:1.15em}.scope-warning p{margin-bottom:0}
+.research-panel{background:white;border:1px solid #d9dfd5;padding:22px;border-radius:12px;margin:16px 0}.research-panel progress{width:100%;height:18px}.research-panel blockquote{border-left:3px solid #b8c4b8;padding-left:14px;margin-left:0;line-height:1.6}.research-panel input{width:85px;padding:8px;font:inherit}
 details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{cursor:pointer;color:#315e49;font-weight:600}.advanced-controls{padding-top:10px}
 .answer-body{line-height:1.65}.answer-body p{margin:14px 0}.answer-body h3,.answer-body h4,.answer-body h5,.answer-body h6{margin:22px 0 8px;font-size:1.1em}.answer-body li{margin:8px 0}.answer-body blockquote{border-left:3px solid #b8c4b8;margin:16px 0;padding-left:16px}.answer-body pre{white-space:pre-wrap}.answer-body code{background:#f5f4ed;padding:2px 4px}.citation{white-space:nowrap;font-weight:600;scroll-margin-top:20px}.source:focus{outline:2px solid #315e49}
 </style>
@@ -38,6 +39,7 @@ details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{curs
 <label><input id="allow-unverified" type="checkbox"> Show an unverified model draft if source checks fail</label>
 <p class="muted">Off by default. After the attempt limit, you can inspect the rejected response with a warning and no citation links. It may contain unsupported claims or invented quotations. Source filters and checks still apply.</p>
 <label><input id="expand-related" type="checkbox" checked> Search related concepts if the first passages do not address the question</label>
+<label><input id="answer-original" type="checkbox"> Exactly as asked · keep the original question wording</label>
 <p class="muted">One extra local keyword-generation step suggests up to three search phrases. Author, book and collection filters stay in place; answer attempts remain bounded. Related themes are background, not a direct position on your question.</p>
 <label class="book-control">Book <select id="book"><option value="">All books</option></select></label>
 <label>Author <select id="author"><option value="auto">From your question</option><option value="all">Whole ministry / all authors</option><option>Witness Lee</option><option>Watchman Nee</option></select></label>
@@ -58,6 +60,23 @@ details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{curs
 </div></details>
 <div><button type="submit" data-answer="false">Find passages</button><button type="submit" data-answer="true">Answer from passages</button></div>
 </form>
+<details id="deep-research"><summary>Deep research · examine the collection in saved batches</summary>
+<div class="research-panel">
+<p>Uses the question, collection, author, book and local model selected above. Every matching stored section is visited; long sections are split into small windows. Progress and excerpts stay on this PC.</p>
+<p class="muted">This can take hours or days and compete with ordinary answers for your GPU. A complete scan means all stored text was processed, not that the model found every relevant teaching. Reports compress findings and can miss nuances.</p>
+<label>Run minutes <input id="research-minutes" type="number" min="0" max="1440" value="10"></label>
+<label>Words per batch <input id="research-words" type="number" min="100" max="1200" value="600"></label>
+<label>Batch limit <input id="research-batches" type="number" min="0" max="10000" value="0"></label>
+<p class="muted">Zero minutes runs until completion or an error. Zero batches adds no batch limit. Pause and time limits take effect after the current model call. Saved jobs do not restart automatically when the app opens.</p>
+<div><button id="research-start" type="button">Start Deep research</button></div>
+<label>Saved job <select id="research-jobs"><option value="">No saved jobs</option></select></label>
+<div><button id="research-pause" type="button" disabled>Pause</button><button id="research-resume" type="button" disabled>Resume</button><button id="research-summary" type="button" disabled>Summarize findings so far</button></div>
+<p id="research-status" role="status">No job selected.</p>
+<progress id="research-progress" value="0" max="1"></progress>
+<div id="research-report"></div>
+<div id="research-findings"></div><button id="research-more" type="button" hidden>Show collected excerpts</button>
+</div></details>
 <p id="status" role="status"></p><div id="answer"></div><div id="results"></div>
 <script src="/app.js"></script>
+<script src="/research.js"></script>
 </html>

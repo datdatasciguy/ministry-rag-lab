@@ -13,8 +13,9 @@ from ingest import read_sources, chunk_sections
 from local_model import embed, model_digest
 from catalog import author_scope, has_author
 from bible_html import BOOKS
+from official_sources import preferred_pages
 
-STOPWORDS = set("a an and are as at be by can do does for from how i in is it of on or that the this to was what when where which who why with you".split())
+STOPWORDS = set("a an and are as at be by can do does for from how i in is it of on or that the this to was what when where which who why with you me my our us tell please explain describe".split())
 
 def retrieval_question(question):
     # An author's name in a question should not drown out the requested topic
@@ -22,6 +23,8 @@ def retrieval_question(question):
     return match.group(1).strip(" ?.!") if match else question.strip()
 
 def related_topics(question):
+    if re.search(r"\b(?:find|finding|choose|choosing|seek|seeking|get)\b", question, re.I) and re.search(r"\b(?:wife|husband|mate|spouse)\b", question, re.I):
+        return ["finding a mate", "choosing a spouse", "wife", "husband"]
     # Related search topics are background, not a classification of the conduct.
     if re.search(r"\bmasturbat(?:ion|ing|e|es)\b", question, re.I):
         return ["sexual immorality", "fornication", "sexual purity", "self-control"]
@@ -142,6 +145,11 @@ class SearchIndex:
         searchable = " ".join(row[key] for key in ["title", "heading", "text"])
         row["matched_terms"] = [term for term in terms if re.search(r"\b" + re.escape(term) + r"\b", searchable, re.I)]
         row["retrieval_ranks"] = ranks
+        page = self.manifest.get("website_pages", {}).get(row["title"])
+        if page:
+            row["web_reference"] = True
+            row["publisher"] = page["publisher"]
+            row["fetched_at"] = page["fetched_at"]
         if row["kind"] in {"bible", "notes"}:
             row["url"] = "/api/reference/" + row["section_id"]
         return row
@@ -257,6 +265,24 @@ class SearchIndex:
             seen = set()
             title_counts = Counter()
             ranked = scores.most_common()
+            website_titles = set(self.manifest.get("website_pages", {}))
+            preferred = preferred_pages(question)
+            if website_titles and preferred and terms and not reference:
+                # Promote relevant reviewed pages, never bypass an author or collection filter.
+                website_candidates = db.execute("SELECT c.rowid,c.title,c.url FROM passages JOIN chunks c ON c.rowid=passages.rowid WHERE passages MATCH ? AND c.title IN (" + ",".join("?" for _ in website_titles) + ") ORDER BY bm25(passages,2,1.5,1) LIMIT ?",
+                                                (expression, *website_titles, 100)).fetchall()
+                website_candidates.sort(key=lambda row: preferred.index(row[2]) if row[2] in preferred else len(preferred))
+                promoted = []
+                promoted_titles = set()
+                for row in website_candidates:
+                    if row[1] in eligible_titles and row[1] not in promoted_titles:
+                        scores[row[0]] = max(scores[row[0]], 1 / 60)
+                        ranks.setdefault(row[0], {})["website"] = len(promoted) + 1
+                        promoted.append(row[0])
+                        promoted_titles.add(row[1])
+                        if len(promoted) == min(3, limit):
+                            break
+                ranked = [(rowid, scores[rowid]) for rowid in promoted] + [(rowid, score) for rowid, score in ranked if rowid not in promoted]
             # Prefer varied books, then fill the requested count from other sections
             deferred = []
             for rowid, score in ranked:

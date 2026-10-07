@@ -10,18 +10,18 @@ function makeNode(tag, text, className) {
 }
 
 
-function citationLink(number) {
+function citationLink(number, prefix = 'source') {
   const link = makeNode('a', '[' + number + ']', 'citation');
-  link.href = '#source-' + number;
+  link.href = '#' + prefix + '-' + number;
   link.setAttribute('aria-label', 'Read supporting passage ' + number);
   link.addEventListener('click', () => {
-    const source = element('source-' + number);
+    const source = element(prefix + '-' + number);
     if (source) source.focus({preventScroll: true});
   });
   return link;
 }
 
-function appendInline(node, text, sourceCount) {
+function appendInline(node, text, sourceCount, prefix = 'source') {
   // Build DOM nodes so model text cannot inject HTML or external links.
   const pattern = /\[(\d+(?:\s*,\s*\d+)*)\]|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_|`([^`\n]+)`/g;
   let end = 0;
@@ -32,14 +32,14 @@ function appendInline(node, text, sourceCount) {
       if (numbers.every(number => number >= 1 && number <= sourceCount)) {
         numbers.forEach((number, index) => {
           if (index) node.append(document.createTextNode(' '));
-          node.append(citationLink(number));
+          node.append(citationLink(number, prefix));
         });
       } else node.append(document.createTextNode(match[0]));
     } else {
       const tag = match[2] || match[3] ? 'strong' : match[6] ? 'code' : 'em';
       const child = makeNode(tag, '');
       if (tag === 'code') child.textContent = match[6];
-      else appendInline(child, match[2] || match[3] || match[4] || match[5], sourceCount);
+      else appendInline(child, match[2] || match[3] || match[4] || match[5], sourceCount, prefix);
       node.append(child);
     }
     end = match.index + match[0].length;
@@ -47,7 +47,7 @@ function appendInline(node, text, sourceCount) {
   node.append(document.createTextNode(text.slice(end)));
 }
 
-function renderAnswer(text, sourceCount) {
+function renderAnswer(text, sourceCount, prefix = 'source') {
   const body = makeNode('div', '', 'answer-body');
   let block = null;
   let list = null;
@@ -73,7 +73,7 @@ function renderAnswer(text, sourceCount) {
     const quote = line.match(/^\s*>\s?(.*)$/);
     if (heading) {
       const node = makeNode('h' + Math.min(heading[1].length + 2, 6), '');
-      appendInline(node, heading[2], sourceCount);
+      appendInline(node, heading[2], sourceCount, prefix);
       body.append(node);
       block = null; list = null;
       orderedList = null; orderedItem = null;
@@ -93,7 +93,7 @@ function renderAnswer(text, sourceCount) {
         (orderedItem || body).append(list);
       }
       const node = makeNode('li', '');
-      appendInline(node, item[3], sourceCount);
+      appendInline(node, item[3], sourceCount, prefix);
       list.append(node);
       if (tag === 'ol') orderedItem = node;
       block = null;
@@ -103,7 +103,7 @@ function renderAnswer(text, sourceCount) {
         block = makeNode(tag, '');
         body.append(block);
       } else block.append(document.createTextNode(' '));
-      appendInline(block, quote ? quote[1] : line, sourceCount);
+      appendInline(block, quote ? quote[1] : line, sourceCount, prefix);
       list = null;
       orderedList = null; orderedItem = null;
     }
@@ -162,9 +162,9 @@ function showSource(source, number, container) {
   const heading = highlightedText('p', source.heading, source.matched_terms);
   heading.classList.add('muted');
   card.append(heading);
-  const attribution = source.kind === 'bible' ? 'Bible text · Recovery Version' : source.kind === 'notes' ? 'Footnote commentary · Recovery Version' : 'Ministry · ' + (source.author === 'Unverified' ? 'Authorship not verified' : source.author);
+  const attribution = source.web_reference ? 'Reviewed website · ' + source.publisher + ' · retrieved ' + source.fetched_at.slice(0, 10) : source.kind === 'bible' ? 'Bible text · Recovery Version' : source.kind === 'notes' ? 'Footnote commentary · Recovery Version' : 'Ministry · ' + (source.author === 'Unverified' ? 'Authorship not verified' : source.author);
   card.append(makeNode('p', attribution, 'muted'));
-  const labels = {words: 'Words', meaning: 'Meaning', reference: 'Verse reference'};
+  const labels = {words: 'Words', meaning: 'Meaning', reference: 'Verse reference', website: 'Reviewed website priority'};
   card.append(makeNode('p', Object.entries(source.retrieval_ranks || {}).map(([kind, rank]) => `${labels[kind]} rank ${rank}`).join(' · '), 'muted'));
   const pages = (source.pages || []).filter(page => page !== null);
   if (pages.length) {
@@ -336,6 +336,7 @@ async function submitQuery(event) {
   payload.max_answer_attempts = Number(element('answer-attempts').value);
   payload.allow_unverified_response = element('allow-unverified').checked;
   payload.expand_related_topics = element('expand-related').checked;
+  payload.answer_original = element('answer-original').checked;
   controls.forEach(control => control.disabled = true);
   try {
     const response = await fetch('/api/query', {
@@ -345,6 +346,7 @@ async function submitQuery(event) {
     });
     const data = await response.json();
     if (!response.ok) throw Error(typeof data.detail === 'string' ? data.detail : 'Please check your question.');
+    if (!data.answer && data.interpreted_question) element('answer').append(makeNode('p', 'I interpreted your question as: ' + data.interpreted_question + ' ' + (data.policy_notice || ''), 'scope-warning'));
     if (data.answer) {
       const panel = makeNode('section', '', 'answer');
       if (data.scope_warning) {
@@ -362,9 +364,25 @@ async function submitQuery(event) {
         warning.append(makeNode('strong', 'Evidence cautions'), list);
         panel.append(warning);
       }
-      panel.append(makeNode('h3', data.abstain ? 'More evidence needed' : data.scope_warning ? 'Findings from the retrieved passages' : data.support_level === 'background' ? 'Related source teachings — broader principles' : 'Answer'));
+      if (data.interpreted_question) panel.append(makeNode('p', 'I interpreted your question as: ' + data.interpreted_question, 'scope-warning'));
+      panel.append(makeNode('h3', data.question_refused ? 'Cannot answer as framed' : data.policy_intro ? 'Respectful wording' : data.official_intro ? 'Official introductions' : data.abstain ? 'More evidence needed' : data.scope_warning ? 'Findings from the retrieved passages' : data.support_level === 'background' ? 'Related source teachings — broader principles' : 'Answer'));
       if (data.support_level === 'background') panel.append(makeNode('p', 'These passages support related teachings. They do not directly establish an answer to your specific question; any application beyond them belongs in the separate extrapolation section.', 'muted'));
       panel.append(renderAnswer(data.answer, data.sources.length));
+      if (data.policy_notice) panel.append(makeNode('p', data.policy_notice, 'muted'));
+      if (data.official_intro) {
+        panel.append(makeNode('p', data.official_notice, 'muted'));
+        const pages = makeNode('ul', '');
+        data.official_links.forEach(source => {
+          const item = makeNode('li', '');
+          const link = makeNode('a', source.title);
+          link.href = source.url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          item.append(link);
+          pages.append(item);
+        });
+        panel.append(pages);
+      }
       if (data.citations?.length) {
         const citations = makeNode('p', data.support_level === 'background' ? 'Sources for these broader teachings: ' : 'Supporting passages: ', 'muted');
         data.citations.forEach((number, index) => {
@@ -398,8 +416,8 @@ async function submitQuery(event) {
     const collection = {all: 'Everything', balanced: 'Balanced sources', ministry: 'Ministry books', bible: 'Bible verses only', notes: 'Bible footnotes only'}[data.collection];
     const counts = data.source_counts || {};
     const balance = data.collection === 'balanced' ? ` · ${counts.ministry || 0} ministry / ${counts.bible || 0} Bible / ${counts.notes || 0} footnotes` : '';
-    const related = data.related_topics?.length ? ` Related topics also searched: ${data.related_topics.join(', ')}. These are background topics, not a classification of the specific conduct.` : '';
-    element('status').textContent = `${data.sources.length} passages found · ${collection} · ${scope}${balance}.${related} Check the sources before relying on a generated answer.`;
+    const related = data.related_topics?.length ? ` Related wording also searched: ${data.related_topics.join(', ')}. Search expansion does not establish a teaching or classification.` : '';
+    element('status').textContent = data.question_refused ? 'The original question was not answered as framed.' : data.policy_intro ? 'The interpreted question is shown above. Use respectful, specific wording to search the ministry.' : data.official_intro ? 'Official introductions shown. Open the linked pages for their full presentation.' : `${data.sources.length} passages found · ${collection} · ${scope}${balance}.${related} Check the sources before relying on a generated answer.`;
   } catch (error) {
     element('status').className = 'error';
     element('status').textContent = error.message;
@@ -409,7 +427,7 @@ async function submitQuery(event) {
 }
 
 element('search').addEventListener('submit', submitQuery);
-for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation', 'allow-unverified', 'expand-related']) {
+for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation', 'allow-unverified', 'expand-related', 'answer-original']) {
   element(id).addEventListener('change', () => {
     element('answer').replaceChildren();
     element('results').replaceChildren();
