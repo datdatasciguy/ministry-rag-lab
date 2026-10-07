@@ -211,3 +211,5 @@ using the commands above. The app binds to this PC's loopback address. Preparing
 a package does not send it anywhere or grant rights to redistribute book content.
 See [friend setup](docs/sharing.md) for the complete installation and collection
 requirements. Your localhost address is only accessible on your own computer.
+
+Optimized research searches reusable section summaries, filters candidates by relevance and follows up on gaps. Full scan remains available when you want every scoped section examined. Both save checkpoints and link reports to original excerpts. See [Deep research](docs/deep_research.md) for the controls and coverage limits.

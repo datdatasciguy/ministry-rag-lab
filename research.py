@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from catalog import author_scope, has_author
 from local_model import model_digest, request, validate_answer
 from model_options import model_profile
+from research_selection import ResearchPlanner
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -25,6 +26,7 @@ class ResearchJobs:
         self.active = None
         self.stop = threading.Event()
         self.started = None
+        self.planner = ResearchPlanner(self)
 
     def root(self):
         path = Path(self.saved_root) if self.saved_root else self.index.path.parent / "research"
@@ -51,10 +53,16 @@ class ResearchJobs:
         meta["updated_at"] = now()
         db.execute("UPDATE metadata SET value=?", (json.dumps(meta),))
 
-    def create(self, question, model, book="", author="auto", collection="all", batch_words=600):
+    def create(self, question, model, book="", author="auto", collection="all", batch_words=600,
+               research_mode="full", candidate_limit=40, min_relevance=1, followup_rounds=2):
         if not question.strip() or len(question) > 2000 or not 100 <= batch_words <= 1200:
             raise ValueError("Use a question and a batch size of 100–1,200 words")
+        if research_mode not in {"full", "optimized"} or not 5 <= candidate_limit <= 300 or not 0 <= min_relevance <= 3 or not 0 <= followup_rounds <= 3:
+            raise ValueError("Choose full or optimized research, 5–300 candidates, a relevance cutoff of 0–3 and 0–3 follow-up rounds")
         digest = model_digest(model)
+        embedding = self.index.manifest.get("embedding_model")
+        if research_mode == "optimized" and embedding and model_digest(embedding) != self.index.manifest["embedding_digest"]:
+            raise ValueError("Embedding model changed; rebuild the index before optimized research")
         scope = author_scope(question, author)
         titles = []
         for title in self.index.titles():
@@ -72,10 +80,11 @@ class ResearchJobs:
             if not source.execute("SELECT name FROM sqlite_master WHERE name='source_sections'").fetchone():
                 raise ValueError("Rebuild the index to retain complete source sections before Deep research")
             marks = ",".join("?" for _ in titles)
+            eligible = source.execute("SELECT COUNT(*) FROM source_sections WHERE title IN (" + marks + ")", titles).fetchone()[0]
             sections = [(row[0], max(1, (len(row[1].split()) + batch_words - 1) // batch_words))
                         for row in source.execute("SELECT id,text FROM source_sections WHERE title IN (" + marks +
-                                                  ") ORDER BY title, position, id", titles)]
-        if not sections:
+                                                  ") ORDER BY title, position, id", titles)] if research_mode == "full" else []
+        if not eligible:
             raise ValueError("No source sections match this research scope")
         job_id = str(uuid4())
         with closing(sqlite3.connect(self.root() / (job_id + ".sqlite"))) as db, db:
@@ -86,11 +95,16 @@ class ResearchJobs:
                 CREATE TABLE findings(id INTEGER PRIMARY KEY, source_id TEXT, title TEXT, heading TEXT, author TEXT, kind TEXT, quote TEXT, UNIQUE(source_id, quote));
                 CREATE TABLE nodes(id INTEGER PRIMARY KEY, level INTEGER, group_number INTEGER, data TEXT, UNIQUE(level, group_number));
                 CREATE INDEX node_level ON nodes(level, id);
+                CREATE TABLE candidates(source_id TEXT PRIMARY KEY, round INTEGER, title TEXT, heading TEXT, origin TEXT, preview TEXT, state TEXT, score INTEGER, reason TEXT);
+                CREATE INDEX candidate_state ON candidates(state);
             """)
             meta = {"id": job_id, "question": question.strip(), "model": model, "model_digest": digest,
                     "book": book, "author": scope, "collection": collection, "fingerprint": self.fingerprint(),
                     "batch_words": batch_words, "total_sections": len(sections), "status": "paused",
-                    "phase": "scan", "batches": 0, "words_examined": 0, "failures": 0,
+                    "phase": "plan" if research_mode == "optimized" else "scan", "batches": 0, "words_examined": 0, "failures": 0,
+                    "research_mode": research_mode, "eligible_sections": eligible, "eligible_titles": titles,
+                    "candidate_limit": candidate_limit, "min_relevance": min_relevance, "followup_rounds": followup_rounds,
+                    "research_round": 0, "queries": [], "selection_batches": 0, "selection_seconds": 0,
                     "total_scan_batches": sum(row[1] for row in sections),
                     "scan_seconds": 0, "timed_scan_batches": 0, "summary_seconds": 0, "timed_summary_batches": 0,
                     "active_seconds": 0, "created_at": now(), "updated_at": now(), "last_error": "",
@@ -114,14 +128,22 @@ class ResearchJobs:
             if meta["report_root"] is not None:
                 report = json.loads(db.execute("SELECT data FROM nodes WHERE id=?", (meta["report_root"],)).fetchone()[0])
             elapsed = time.monotonic() - self.started if self.started is not None and self.active == job_id and self.worker and self.worker.is_alive() else 0
-            return {**meta, "active_seconds": round(meta["active_seconds"] + elapsed, 2),
+            selection = self.planner.status(db, meta) if meta.get("research_mode") == "optimized" else {}
+            public = {key: value for key, value in meta.items() if key != "eligible_titles"}
+            return {**public, **selection, "active_seconds": round(meta["active_seconds"] + elapsed, 2),
                     "sections_examined": done, "partial_sections": partial, "finding_count": count,
-                    "coverage_percent": round(100 * done / meta["total_sections"], 2), "report": report,
+                    "coverage_percent": round(100 * done / max(1, meta["total_sections"]), 2), "report": report,
                     "eta": self.estimate(db, meta, done, partial, count, elapsed)}
 
     def estimate(self, db, meta, done, partial, findings, elapsed=0):
         if meta['status'] == 'complete':
             return {"seconds": 0, "note": "Complete."}
+        if meta.get('research_mode') == 'optimized' and meta['phase'] in {'plan', 'select', 'expand'}:
+            completed = db.execute("SELECT COUNT(*) FROM candidates WHERE state!='pending'").fetchone()[0]
+            pending = db.execute("SELECT COUNT(*) FROM candidates WHERE state='pending'").fetchone()[0]
+            return {"seconds": round(meta['selection_seconds'] / completed * pending) if completed >= 3 else None,
+                    "target": "current selection stage",
+                    "note": "Building or reusing summaries and rating candidates. Later reading, follow-up rounds and report work add time."}
         if meta['batches'] < 3:
             return {"seconds": None, "note": "Estimating after a few completed batches."}
         active = meta['active_seconds'] + elapsed
@@ -151,6 +173,8 @@ class ResearchJobs:
         if reporting:
             summary_calls = max(0, summary_calls - db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0])
         note = "Rough estimate from measured speed; future excerpts, retries and PC load can change it."
+        if meta.get("research_mode") == "optimized":
+            note += " Later follow-up rounds may add candidates and time."
         if not meta.get('timed_summary_batches'):
             note += " Final-summary speed has not been measured yet."
         if meta['status'] == 'paused':
@@ -184,11 +208,20 @@ class ResearchJobs:
                     raise ValueError("The source index changed. Start a new research job to keep coverage accurate")
                 if model_digest(meta["model"]) != meta["model_digest"]:
                     raise ValueError("The local model changed. Restore that version or start a new research job")
+                embedding = self.index.manifest.get("embedding_model")
+                if meta.get("research_mode") == "optimized" and embedding and model_digest(embedding) != self.index.manifest["embedding_digest"]:
+                    raise ValueError("Embedding model changed; restore it before resuming optimized research")
                 pending = db.execute("SELECT COUNT(*) FROM sections WHERE done=0").fetchone()[0]
                 if summarize:
+                    if meta.get("research_mode") == "optimized" and meta["phase"] != "report":
+                        meta["resume_phase"] = meta["phase"]
                     self.begin_report(db, meta)
                 elif meta["phase"] == "report" and meta["report_root"] is None:
                     pass  # Resume an interrupted reduction without losing its nodes.
+                elif meta.get("research_mode") == "optimized" and meta.get("resume_phase"):
+                    meta["phase"] = meta.pop("resume_phase")
+                elif meta.get("research_mode") == "optimized" and meta["phase"] != "report":
+                    pass
                 elif pending:
                     meta["phase"] = "scan"
                 elif meta["report_root"] is not None and meta.get("report_sections") == meta["total_sections"]:
@@ -272,7 +305,10 @@ class ResearchJobs:
         pending = db.execute("SELECT * FROM sections WHERE done=0 ORDER BY position LIMIT 1").fetchone()
         if pending is None:
             with db:
-                self.begin_report(db, meta)
+                if meta.get("research_mode") == "optimized":
+                    meta["phase"] = "expand"
+                else:
+                    self.begin_report(db, meta)
                 self.write(db, meta)
             return False
         with closing(self.index.connect()) as source:
@@ -392,12 +428,14 @@ class ResearchJobs:
                 while not self.stop.is_set():
                     if minutes and time.monotonic() - started >= minutes * 60 or max_batches and count >= max_batches:
                         break
-                    if meta["phase"] == "scan":
+                    if meta["phase"] in {"plan", "select", "expand"}:
+                        self.planner.step(db, meta)
+                    elif meta["phase"] == "scan":
                         self.scan_batch(db, meta)
                     elif self.report_batch(db, meta):
                         break
                     count += 1
-                meta["status"] = "complete" if meta["report_root"] is not None and meta.get("report_sections") == meta["total_sections"] and not db.execute("SELECT 1 FROM sections WHERE done=0 LIMIT 1").fetchone() else "paused"
+                meta["status"] = "complete" if meta["report_root"] is not None and meta.get("report_sections") == meta["total_sections"] and not meta.get("resume_phase") and not db.execute("SELECT 1 FROM sections WHERE done=0 LIMIT 1").fetchone() else "paused"
             except Exception as error:
                 meta.update(status="paused", last_error=str(error))
                 meta["failures"] += 1
@@ -425,6 +463,15 @@ class ResearchJobs:
                 marks = ",".join("?" for _ in page)
                 rows = db.execute("SELECT * FROM findings WHERE id IN (" + marks + ") ORDER BY id", page).fetchall() if page else []
             return {"findings": [dict(row) for row in rows], "total": total, "offset": offset}
+
+    def selection(self, job_id, offset=0, limit=20):
+        if not 0 <= offset or not 1 <= limit <= 100:
+            raise ValueError("Choose a nonnegative offset and 1–100 candidates")
+        with closing(self.connect(job_id)) as db:
+            if self.read(db).get("research_mode") != "optimized":
+                return {"candidates": [], "total": 0}
+            rows = db.execute("SELECT source_id,title,heading,round,origin,state,score,reason FROM candidates ORDER BY rowid LIMIT ? OFFSET ?", (limit, offset)).fetchall()
+            return {"candidates": [dict(row) for row in rows], "total": db.execute("SELECT COUNT(*) FROM candidates").fetchone()[0]}
 
     def descendants(self, db, node_id):
         row = db.execute("SELECT data FROM nodes WHERE id=?", (node_id,)).fetchone()

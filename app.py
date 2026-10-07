@@ -41,6 +41,10 @@ class ResearchStart(Query):
     batch_words: int = Field(default=600, ge=100, le=1200)
     run_minutes: int = Field(default=10, ge=0, le=1440)
     max_batches: int = Field(default=0, ge=0, le=10000)
+    research_mode: str = Field(default="full", pattern="^(full|optimized)$")
+    candidate_limit: int = Field(default=40, ge=5, le=300)
+    min_relevance: int = Field(default=1, ge=0, le=3)
+    followup_rounds: int = Field(default=2, ge=0, le=3)
 
 class ResearchRun(BaseModel):
     run_minutes: int = Field(default=10, ge=0, le=1440)
@@ -180,7 +184,8 @@ def create_app(index_path, model, desktop=False):
         if official_introduction(body.question):
             raise HTTPException(status_code=400, detail="Use Answer from passages for the official introduction links to this question; a corpus scan is not needed.")
         job = research_call(research.create, body.question, body.model or model, body.book,
-                            body.author, body.collection, body.batch_words)
+                            body.author, body.collection, body.batch_words, body.research_mode,
+                            body.candidate_limit, body.min_relevance, body.followup_rounds)
         return research_call(research.resume, job["id"], body.run_minutes, body.max_batches)
 
     @app.get("/api/research/{job_id}")
@@ -204,6 +209,10 @@ def create_app(index_path, model, desktop=False):
                           finding_id: int | None = None):
         return research_call(research.findings, job_id, offset, limit, node_id,
                              [finding_id] if finding_id is not None else None)
+
+    @app.get("/api/research/{job_id}/selection")
+    def research_selection(job_id: str, offset: int = 0, limit: int = 20):
+        return research_call(research.selection, job_id, offset, limit)
 
     @app.get("/api/research/{job_id}/source/{finding_id}")
     def research_source(job_id: str, finding_id: int):

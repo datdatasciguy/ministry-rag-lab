@@ -2,6 +2,8 @@ let researchJob = '';
 let researchOffset = 0;
 let researchReportKey = '';
 let researchBusy = false;
+let researchDecisionOffset = 0;
+let researchDecisionTotal = 0;
 
 async function researchRequest(path, body) {
   const response = await fetch('/api/research' + path, body === undefined ? {} : {
@@ -36,8 +38,9 @@ function renderResearchReport(job) {
   container.replaceChildren();
   if (!job.report) return;
   const report = job.report;
+  const optimized = job.research_mode === 'optimized';
   container.append(makeNode('h3', 'Research report'), makeNode('p',
-    `Report snapshot: ${job.report_sections.toLocaleString()} of ${job.total_sections.toLocaleString()} sections examined. ${job.report_sections < job.total_sections ? 'Preliminary findings; the scan is incomplete.' : 'All scoped sections processed.'} Citations link to evidence groups and their original excerpts. This is a model synthesis, not an authoritative ranking.`, 'scope-warning'),
+    `Report snapshot: ${job.report_sections.toLocaleString()} of ${job.total_sections.toLocaleString()} ${optimized ? "selected" : "scoped"} sections examined. ${optimized ? `The full scope contains ${job.eligible_sections.toLocaleString()} sections; this report does not establish corpus-wide coverage. ` : ""}${job.report_sections < job.total_sections || job.resume_phase ? 'Preliminary findings; research is incomplete.' : optimized ? 'All selected sections processed.' : 'All scoped sections processed.'} Citations link to evidence groups and their original excerpts. This is a model synthesis, not an authoritative ranking.`, 'scope-warning'),
     renderAnswer(report.answer, report.sources.length, 'research-source'));
   report.sources.forEach((source, index) => {
     const card = makeNode('section', '', 'source');
@@ -77,7 +80,12 @@ async function refreshResearch() {
     element('research-progress').value = job.sections_examined;
     const seconds = job.active_seconds;
     const pace = job.batches ? Math.round(seconds / job.batches) : null;
-    element('research-status').textContent = `${job.status} · ${job.phase} · ${job.sections_examined.toLocaleString()} / ${job.total_sections.toLocaleString()} sections examined (${job.coverage_percent}%) · ${job.partial_sections} partial · ${job.batches} source batches · ${job.summary_batches} summary batches · ${job.finding_count} excerpts · ${job.failures} failed runs. Scope: ${job.collection}, ${job.author}${job.book ? ', book: ' + job.book : ''}. ${pace === null ? '' : 'Recorded average: ' + pace + ' seconds per source batch, including report work.'} ${job.last_error}`;
+    element('research-status').textContent = `${job.research_mode === "optimized" ? "Optimized research" : "Full scan"} · ${job.status} · ${job.phase} · ${job.sections_examined.toLocaleString()} / ${job.total_sections.toLocaleString()} sections examined (${job.coverage_percent}%) · ${job.partial_sections} partial · ${job.batches} source batches · ${job.summary_batches} summary batches · ${job.finding_count} excerpts · ${job.failures} failed runs. Scope: ${job.collection}, ${job.author}${job.book ? ', book: ' + job.book : ''}. ${pace === null ? '' : 'Recorded average: ' + pace + ' seconds per source batch, including report work.'} ${job.last_error}`;
+    const decisions = job.selection_counts || {};
+    element('research-selection-status').textContent = job.research_mode === 'optimized'
+      ? `Round ${job.research_round + 1} of up to ${job.followup_rounds + 1} · ${decisions.pending || 0} candidates pending · ${decisions.selected || 0} selected · ${decisions.pruned || 0} below cutoff · ${job.summary_cache_sections || 0} reusable indexed summaries. Corpus coverage: ${job.corpus_coverage_percent}% of ${job.eligible_sections.toLocaleString()} eligible sections. Searches: ${(job.queries || []).join(' · ')}. ${job.stop_reason || ''}`
+      : '';
+    element('research-decisions').disabled = job.research_mode !== 'optimized';
     let eta = job.eta;
     // Older running servers can still show a rough section-based scan estimate.
     if (!eta) {
@@ -122,6 +130,10 @@ async function loadResearchJobs(selected = '') {
     researchJob = data.jobs.some(job => job.id === selected) ? selected : data.jobs[0]?.id || '';
     element('research-jobs').value = researchJob;
     researchOffset = 0;
+    researchDecisionOffset = 0;
+    researchDecisionTotal = 0;
+    element('research-decision-list').replaceChildren();
+    element('research-decisions').textContent = 'Show candidates and relevance scores';
     researchReportKey = '';
     element('research-findings').replaceChildren();
     await refreshResearch();
@@ -138,7 +150,9 @@ element('research-start').addEventListener('click', async () => {
     if (!question) throw Error('Enter your research question above.');
     const job = await researchRequest('', {...researchSettings(), question, model: element('model').value,
       book: element('book').value, author: element('author').value, collection: element('collection').value,
-      batch_words: Number(element('research-words').value),
+      batch_words: Number(element('research-words').value), research_mode: element('research-mode').value,
+      candidate_limit: Number(element('research-candidates').value), min_relevance: Number(element('research-relevance').value),
+      followup_rounds: Number(element('research-rounds').value),
       answer_original: element('answer-original').checked, skip_wording_guidance: element('skip-wording-guidance').checked});
     await loadResearchJobs(job.id);
   } catch (error) {
@@ -171,6 +185,33 @@ element('research-more').addEventListener('click', async () => {
     element('research-status').textContent = error.message;
   }
 });
+element('research-decisions').addEventListener('click', async () => {
+  try {
+    if (researchDecisionTotal && researchDecisionOffset >= researchDecisionTotal) {
+      researchDecisionOffset = 0;
+      element('research-decision-list').replaceChildren();
+    }
+    const data = await researchRequest('/' + researchJob + '/selection?limit=20&offset=' + researchDecisionOffset);
+    data.candidates.forEach(candidate => {
+      const item = makeNode('p', `${candidate.title} / ${candidate.heading} · round ${candidate.round + 1} · ${candidate.origin} · ${candidate.state}${candidate.score === null ? '' : ' · relevance ' + candidate.score + '/3'}. ${candidate.reason || ''}`);
+      element('research-decision-list').append(item);
+    });
+    researchDecisionTotal = data.total;
+    researchDecisionOffset += data.candidates.length;
+    element('research-decisions').textContent = researchDecisionOffset < data.total ? `More candidates · ${researchDecisionOffset} / ${data.total}` : `Refresh candidates · ${data.total} shown`;
+  } catch (error) {
+    element('research-selection-status').textContent = error.message;
+  }
+});
+function researchModeHelp() {
+  const optimized = element('research-mode').value === 'optimized';
+  element('research-selection-settings').hidden = !optimized;
+  element('research-mode-help').textContent = optimized
+    ? 'Search reusable summaries and the word/meaning indexes, rate candidates, then read selected sections in full. Follow-up searches investigate gaps. The first run builds summaries; later runs reuse them. This does not read every book.'
+    : 'Visit every stored section within your filters. It offers broader coverage but can take hours or days.';
+}
+element('research-mode').addEventListener('change', researchModeHelp);
+researchModeHelp();
 loadResearchJobs();
 setInterval(() => {
   if (element('deep-research').open) refreshResearch();

@@ -64,7 +64,15 @@ details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{curs
 </form>
 <details id="deep-research"><summary>Deep research · examine the collection in saved batches</summary>
 <div class="research-panel">
-<p>Uses the question, collection, author, book and local model selected above. Every matching stored section is visited; long sections are split into small windows. Progress and excerpts stay on this PC.</p>
+<p>Uses the question, collection, author, book and local model selected above. Progress, summaries and excerpts stay on this PC.</p>
+<label>Research mode <select id="research-mode"><option value="optimized" selected>Optimized · ranked sections and follow-up searches</option><option value="full">Full scan · every scoped section</option></select></label>
+<p id="research-mode-help" class="muted"></p>
+<details id="research-selection-settings"><summary>Selection settings · breadth and relevance</summary>
+<label>Candidates per round <input id="research-candidates" type="number" min="5" max="300" value="40"></label>
+<label>Relevance cutoff <select id="research-relevance"><option value="0">0 · read every shortlisted candidate</option><option value="1" selected>1 · related background or better</option><option value="2">2 · directly relevant</option><option value="3">3 · strongest matches only</option></select></label>
+<label>Follow-up rounds <input id="research-rounds" type="number" min="0" max="3" value="2"></label>
+<p class="muted">Scores are model judgments, not probabilities. A higher cutoff reads fewer sections and can miss useful evidence. Summaries are built as needed, saved for reuse and used only to route searches; reports cite original excerpts.</p>
+</details>
 <p class="muted">This can take hours or days and compete with ordinary answers for your GPU. A complete scan means all stored text was processed, not that the model found every relevant teaching. Reports compress findings and can miss nuances.</p>
 <label>Run minutes <input id="research-minutes" type="number" min="0" max="1440" value="10"></label>
 <label>Words per batch <input id="research-words" type="number" min="100" max="1200" value="600"></label>
@@ -76,6 +84,8 @@ details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{curs
 <p id="research-status" role="status">No job selected.</p>
 <p id="research-eta" class="muted"></p>
 <p id="research-summary-help" class="muted"></p>
+<p id="research-selection-status" class="muted"></p>
+<details><summary>Selection decisions</summary><button id="research-decisions" type="button">Show candidates and relevance scores</button><div id="research-decision-list"></div></details>
 <progress id="research-progress" value="0" max="1"></progress>
 <div id="research-report"></div>
 <div id="research-findings"></div><button id="research-more" type="button" hidden>Show collected excerpts</button>
