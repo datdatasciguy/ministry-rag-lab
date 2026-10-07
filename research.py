@@ -13,6 +13,7 @@ from catalog import author_scope, has_author
 from local_model import model_digest, request, validate_answer
 from model_options import model_profile
 from research_selection import ResearchPlanner
+from official_sources import normalize_ministry_question
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -55,6 +56,7 @@ class ResearchJobs:
 
     def create(self, question, model, book="", author="auto", collection="all", batch_words=600,
                research_mode="full", candidate_limit=40, min_relevance=1, followup_rounds=2):
+        question = normalize_ministry_question(question)
         if not question.strip() or len(question) > 2000 or not 100 <= batch_words <= 1200:
             raise ValueError("Use a question and a batch size of 100–1,200 words")
         if research_mode not in {"full", "optimized"} or not 5 <= candidate_limit <= 300 or not 0 <= min_relevance <= 3 or not 0 <= followup_rounds <= 3:
@@ -342,7 +344,12 @@ class ResearchJobs:
                   "extrapolation": {"type": "string", "enum": [""]}},
                   "required": ["answer", "citations", "abstain", "support_level", "extrapolation"], "additionalProperties": False}
         system = ("Combine these research findings into a concise source-faithful explanation. "
-                  "Use qualified wording: these sources, this context. Group common themes with "
+                  "Present directly supported teachings in the ministry's own explanatory voice. "
+                  "Avoid editorial openings such as as described in the passages. Preserve genuine "
+                  "contextual differences, uncertainties and coverage limits. For introductory "
+                  "definitions, favor original excerpts that explicitly explain the whole topic, "
+                  "including relevant FAQ and website introductions when present, instead of "
+                  "defining the topic from one practice. Group common themes with "
                   "citations [1, 2], retain differing contexts and disagreements, and give examples. "
                   "State each shared point once and preserve the sources' terminology. Do not infer "
                   "a relationship merely because concepts appear together. "

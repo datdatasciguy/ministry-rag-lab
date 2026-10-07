@@ -10,12 +10,12 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from local_model import generate, related_searches, request as model_request
+from local_model import generate, related_searches, plan_retrieval, request as model_request
 from model_options import PROFILES, read_settings
 from search import SearchIndex, related_topics
 from catalog import author_scope
 from research import ResearchJobs
-from official_sources import official_introduction
+from official_sources import normalize_ministry_question
 from question_policy import respectful_question, original_wording
 
 class Query(BaseModel):
@@ -88,10 +88,15 @@ def create_app(index_path, model, desktop=False):
     def query(body: Query):
         try:
             question, original = original_wording(body.question, body.answer_original)
+            corrected = normalize_ministry_question(question)
+            correction = corrected if corrected.casefold() != question.casefold().replace("’", "'") else ""
+            question = corrected
             body = body.model_copy(update={"question": question, "answer_original": original})
             guidance = None if body.skip_wording_guidance else respectful_question(body.question, body.answer_original)
             interpretation = ({"policy_notice": "Wording guidance skipped. Original question wording retained; evidence checks still apply."}
                               if body.skip_wording_guidance else {})
+            if correction:
+                interpretation["query_correction"] = correction
             search_question = body.question
             if guidance and guidance.get('query_rewrite'):
                 interpretation = {key: guidance[key] for key in ['interpreted_question', 'policy_notice']}
@@ -100,20 +105,32 @@ def create_app(index_path, model, desktop=False):
             elif guidance:
                 return {**guidance, "scope": author_scope(body.question, body.author),
                         "collection": body.collection, "answer_sources": 0, "source_counts": {}, "related_topics": []}
-            introduction = official_introduction(body.question, body.answer_original) if body.answer else None
-            if introduction:
-                return {**introduction, "scope": author_scope(body.question, body.author),
-                        "collection": body.collection, "answer_sources": 0, "source_counts": {}, "related_topics": []}
-            hits = index.search(search_question, body.mode, body.answer_sources if body.answer else body.limit, body.book, body.author, body.collection)
             scope = author_scope(body.question, body.author)
+            selected_model = body.model or model
+            preferred_topics = None
+            planning_warning = ''
+            if body.answer:
+                try:
+                    plan = plan_retrieval(body.question, selected_model)
+                    search_question = plan['search_question']
+                    preferred_topics = plan['topics']
+                    if body.author == 'auto' and plan['intent'] in {'definition', 'overview'} and set(preferred_topics) & {'witness_lee', 'watchman_nee', 'publisher'}:
+                        # A biography asks about a person, rather than only texts authored by them.
+                        scope = 'all'
+                    interpretation['retrieval_topics'] = preferred_topics
+                except (ValueError, RuntimeError, KeyError):
+                    planning_warning = 'Search planning could not complete; used the original question.'
+            search_author = scope if body.author == 'auto' else body.author
+            hits = index.search(search_question, body.mode, body.answer_sources if body.answer else body.limit,
+                                body.book, search_author, body.collection, preferred_topics)
             counts = dict(Counter(hit["kind"] for hit in hits))
             related = related_topics(body.question)
             if body.answer:
                 selected_model = body.model or model
                 retry_mode = "lexical" if body.mode == "hybrid" else (
                     "hybrid" if index.manifest["embedding_model"] else "lexical")
-                retry_search = lambda: index.search(body.question, retry_mode, body.answer_sources,
-                                                   body.book, body.author, body.collection)
+                retry_search = lambda: index.search(search_question, retry_mode, body.answer_sources,
+                                                   body.book, search_author, body.collection, preferred_topics)
                 if hits:
                     result = generate(body.question, hits, selected_model, body.answer_length,
                                       body.answer_words, body.allow_extrapolation,
@@ -127,7 +144,7 @@ def create_app(index_path, model, desktop=False):
                         terms = related_searches(body.question, selected_model)
                         # Keep the author resolved from the original question during expansion.
                         pools = [index.search(term, body.mode, body.answer_sources, body.book,
-                                              scope if body.author == "auto" else body.author, body.collection)
+                                              scope if body.author == "auto" else body.author, body.collection, preferred_topics)
                                  for term in terms]
                         expanded = []
                         seen = set()
@@ -151,6 +168,8 @@ def create_app(index_path, model, desktop=False):
                             related = list(dict.fromkeys([*related, *terms]))
                     except (ValueError, RuntimeError) as error:
                         result.setdefault("evidence_warnings", []).append("Related-topic search could not complete. The first response and its sources are shown.")
+                if planning_warning:
+                    result.setdefault("evidence_warnings", []).append(planning_warning)
                 counts = dict(Counter(hit["kind"] for hit in result["sources"]))
                 return {**result, **interpretation, "scope": scope, "collection": body.collection,
                         "answer_sources": len(result["sources"]), "source_counts": counts, "related_topics": related}
@@ -181,8 +200,6 @@ def create_app(index_path, model, desktop=False):
     def start_research(body: ResearchStart):
         if not body.skip_wording_guidance and respectful_question(body.question, body.answer_original):
             raise HTTPException(status_code=400, detail="Use Answer from passages to clarify this question's wording before starting a corpus scan.")
-        if official_introduction(body.question):
-            raise HTTPException(status_code=400, detail="Use Answer from passages for the official introduction links to this question; a corpus scan is not needed.")
         job = research_call(research.create, body.question, body.model or model, body.book,
                             body.author, body.collection, body.batch_words, body.research_mode,
                             body.candidate_limit, body.min_relevance, body.followup_rounds)

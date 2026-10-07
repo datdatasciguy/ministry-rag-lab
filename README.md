@@ -36,9 +36,7 @@ For questions that need a wider view, open **Deep research** below the search co
 
 Finding a wife, husband, mate or spouse searches related wording together, so a different term in a book does not hide a useful passage. These extra terms broaden retrieval; the answer still needs evidence.
 
-Identity questions about Witness Lee, Watchman Nee, Living Stream Ministry and the local churches show short introductions and verified official or associated links. Questions about controversies defer to their own statements and the Defense and Confirmation Project, clearly labeled as their presentation. Teaching questions continue through the local RAG. The app does not generate biographies or decide allegations from a small passage sample.
-
-General label questions such as **What is a cult?** also show an introduction to stated faith and church life, rather than making accusations the introduction. This tool does not classify religious groups from retrieved snippets.
+Introductory questions use the same RAG as other questions. The local model identifies relevant topics so matching FAQ, biography, statement-of-faith and introductory website passages receive priority within your filters. Answers explain the ministry directly and cite the retrieved sources. They are generated from evidence rather than fixed question/answer templates.
 
 [Reviewed website references](docs/website_sources.md) can be added to a new local index. Relevant LSM, DCP, A Faithful Word and localchurches.org pages receive a limited retrieval preference, with targeted introductions and FAQs prioritized for common questions. Website publisher labels distinguish these from individual authors' books. Downloaded text stays local.
 

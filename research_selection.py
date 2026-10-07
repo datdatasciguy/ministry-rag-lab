@@ -8,7 +8,7 @@ from contextlib import closing
 
 import numpy as np
 
-from local_model import embed, request
+from local_model import embed, request, plan_retrieval
 from model_options import model_profile
 from search import STOPWORDS, retrieval_question, related_topics
 
@@ -150,7 +150,7 @@ class ResearchPlanner:
         mode = 'hybrid' if self.manager.index.manifest.get('embedding_model') else 'lexical'
         for query in queries:
             pools.append([(source_id, 'summary index') for source_id in cache.search(query, meta['eligible_titles'], limit)])
-            hits = self.manager.index.search(query, mode, min(100, limit), meta['book'], meta['author'], meta['collection'])
+            hits = self.manager.index.search(query, mode, min(100, limit), meta['book'], meta['author'], meta['collection'], meta.get('preferred_topics'))
             pools.append([(hit['section_id'], 'passage index') for hit in hits])
             previews.update({hit['section_id']: hit['text'] for hit in hits})
         ranked = []
@@ -244,7 +244,9 @@ class ResearchPlanner:
     def step(self, db, meta):
         started = time.monotonic()
         if meta['phase'] == 'plan':
-            self.seed(db, meta, [meta['question'], *related_topics(meta['question'])][:4])
+            plan = plan_retrieval(meta['question'], meta['model'])
+            meta['preferred_topics'] = plan['topics']
+            self.seed(db, meta, [plan['search_question'], *related_topics(meta['question'])][:4])
         elif meta['phase'] == 'select':
             self.select(db, meta)
         elif meta['phase'] == 'expand':

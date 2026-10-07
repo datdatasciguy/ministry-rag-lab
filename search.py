@@ -13,11 +13,12 @@ from ingest import read_sources, chunk_sections
 from local_model import embed, model_digest
 from catalog import author_scope, has_author
 from bible_html import BOOKS
-from official_sources import preferred_pages
+from official_sources import preferred_pages, normalize_ministry_question
 
 STOPWORDS = set("a an and are as at be by can do does for from how i in is it of on or that the this to was what when where which who why with you me my our us tell please explain describe".split())
 
 def retrieval_question(question):
+    question = normalize_ministry_question(question)
     # An author's name in a question should not drown out the requested topic
     match = re.match(r"^(?:what|how)\s+(?:does|did|do)\s+.+?\s+(?:say|teach|write|explain)\s+(?:about|on)\s+(.+)", question.strip(), re.I)
     return match.group(1).strip(" ?.!") if match else question.strip()
@@ -192,7 +193,7 @@ class SearchIndex:
                         more = True
             return {"title": section["title"], "sections": blocks, "more": more, "words_each_side": words}
 
-    def search(self, question, mode="lexical", limit=5, book="", author="auto", collection="all"):
+    def search(self, question, mode="lexical", limit=5, book="", author="auto", collection="all", preferred_topics=None):
         if not question.strip() or len(question) > 2000 or not 1 <= limit <= 100:
             raise ValueError("Enter a question up to 2,000 characters and a limit from 1 to 100")
         if mode not in {"lexical", "hybrid"}:
@@ -206,7 +207,7 @@ class SearchIndex:
             if limit < 3:
                 raise ValueError("Choose at least three passages for balanced sources")
             groups = {kind: self.search(question, mode, limit, book if kind == "ministry" else "",
-                                       author if kind == "ministry" else "all", kind)
+                                       author if kind == "ministry" else "all", kind, preferred_topics)
                       for kind in ["ministry", "bible", "notes"]}
             selected = []
             # Two ministry slots for each Bible + footnote pair
@@ -266,7 +267,7 @@ class SearchIndex:
             title_counts = Counter()
             ranked = scores.most_common()
             website_titles = set(self.manifest.get("website_pages", {}))
-            preferred = preferred_pages(question)
+            preferred = preferred_pages(question, preferred_topics)
             if website_titles and preferred and terms and not reference:
                 # Promote relevant reviewed pages, never bypass an author or collection filter.
                 website_candidates = db.execute("SELECT c.rowid,c.title,c.url FROM passages JOIN chunks c ON c.rowid=passages.rowid WHERE passages MATCH ? AND c.title IN (" + ",".join("?" for _ in website_titles) + ") ORDER BY bm25(passages,2,1.5,1) LIMIT ?",
@@ -275,7 +276,7 @@ class SearchIndex:
                 promoted = []
                 promoted_titles = set()
                 for row in website_candidates:
-                    if row[1] in eligible_titles and row[1] not in promoted_titles:
+                    if row[2] in preferred and row[1] in eligible_titles and row[1] not in promoted_titles:
                         scores[row[0]] = max(scores[row[0]], 1 / 60)
                         ranks.setdefault(row[0], {})["website"] = len(promoted) + 1
                         promoted.append(row[0])
