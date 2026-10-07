@@ -162,9 +162,9 @@ function showSource(source, number, container) {
   const heading = highlightedText('p', source.heading, source.matched_terms);
   heading.classList.add('muted');
   card.append(heading);
-  const attribution = source.web_reference ? 'Reviewed website · ' + source.publisher + ' · retrieved ' + source.fetched_at.slice(0, 10) : source.kind === 'bible' ? 'Bible text · Recovery Version' : source.kind === 'notes' ? 'Footnote commentary · Recovery Version' : 'Ministry · ' + (source.author === 'Unverified' ? 'Authorship not verified' : source.author);
+  const attribution = source.kind === 'songs' ? 'Song · Songbase · ' + source.language + (source.songbooks?.length ? ' · ' + source.songbooks.join(' / ') : '') : source.web_reference ? 'Reviewed website · ' + source.publisher + ' · retrieved ' + source.fetched_at.slice(0, 10) : source.kind === 'bible' ? 'Bible text · Recovery Version' : source.kind === 'notes' ? 'Footnote commentary · Recovery Version' : 'Ministry · ' + (source.author === 'Unverified' ? 'Authorship not verified' : source.author);
   card.append(makeNode('p', attribution, 'muted'));
-  const labels = {words: 'Words', meaning: 'Meaning', reference: 'Verse reference', website: 'Reviewed website priority'};
+  const labels = {song: 'Song number', words: 'Words', meaning: 'Meaning', reference: 'Verse reference', website: 'Reviewed website priority'};
   card.append(makeNode('p', Object.entries(source.retrieval_ranks || {}).map(([kind, rank]) => `${labels[kind]} rank ${rank}`).join(' · '), 'muted'));
   const pages = (source.pages || []).filter(page => page !== null);
   if (pages.length) {
@@ -236,10 +236,11 @@ function showSource(source, number, container) {
 function showSources(sources) {
   const groups = [
     {title: 'Bible & footnotes', kinds: ['bible', 'notes']},
-    {title: 'Ministry', kinds: ['ministry']}
+    {title: 'Ministry', kinds: ['ministry']},
+    {title: 'Songs & hymns', kinds: ['songs']}
   ];
   const available = groups.filter(group => sources.some(source => group.kinds.includes(source.kind)));
-  element('results').classList.toggle('source-columns', available.length === 2);
+  element('results').classList.toggle('source-columns', available.length >= 2);
   for (const group of available) {
     const column = makeNode('section', '', 'source-column');
     column.setAttribute('aria-label', group.title);
@@ -266,6 +267,7 @@ async function loadBooks() {
       verse.append(link, makeNode('small', ' · © Living Stream Ministry'));
     }
     element('info').textContent = `${data.books.length} title labels · ${data.chunks.toLocaleString()} searchable passages · ${data.model} · answers stay on this PC`;
+    if (data.songbase) element('info').append(document.createTextNode(' · ' + data.songbase.songs.toLocaleString() + ' Songbase songs'));
     if (data.desktop) {
       const setup = makeNode('a', 'Setup / Quit app');
       setup.href = '/setup';
@@ -278,7 +280,7 @@ async function loadBooks() {
     }
     element('hybrid').disabled = !data.hybrid;
     if (data.hybrid) element('mode').value = 'hybrid';
-    for (const kind of ['bible', 'notes']) {
+    for (const kind of ['bible', 'notes', 'songs']) {
       element('collection').querySelector(`option[value="${kind}"]`).disabled = !Object.values(data.collections).includes(kind);
     }
     element('collection').querySelector('option[value="balanced"]').disabled = !['bible', 'notes'].every(kind => Object.values(data.collections).includes(kind));
@@ -418,7 +420,7 @@ async function submitQuery(event) {
     }
     showSources(data.sources);
     const scope = data.scope === 'all' ? 'All authors' : data.scope + (data.collection === 'balanced' ? ' · ministry authorship' : ' · verified authorship only');
-    const collection = {all: 'Everything', balanced: 'Balanced sources', ministry: 'Ministry books', bible: 'Bible verses only', notes: 'Bible footnotes only'}[data.collection];
+    const collection = {all: 'Everything', balanced: 'Balanced sources', ministry: 'Ministry books', bible: 'Bible verses only', notes: 'Bible footnotes only', songs: 'Songs & hymns'}[data.collection];
     const counts = data.source_counts || {};
     const balance = data.collection === 'balanced' ? ` · ${counts.ministry || 0} ministry / ${counts.bible || 0} Bible / ${counts.notes || 0} footnotes` : '';
     const related = data.related_topics?.length ? ` Related wording also searched: ${data.related_topics.join(', ')}. Search expansion does not establish a teaching or classification.` : '';

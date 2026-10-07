@@ -227,3 +227,37 @@ exhausted repair budget is labeled as a check failure rather than proof that
 the collection lacks an answer. Topic planning preserves the original search
 question, and directly supported answers use natural ministry terminology with
 citations rather than repeated editorial attribution.
+
+## Songs and hymns
+
+Import Songbase's documented public export into a new private index:
+
+```bash
+python songbase.py --index data/books-with-authors.sqlite --output data/books-with-songs.sqlite --dump data/songbase/english.json --download
+python app.py --index data/books-with-songs.sqlite
+```
+
+Choose **Songs & hymns** to search titles, words or topics. Numbers such as
+`Hymn 1040` and `Blue Songbook 10` use the export's songbook mappings; a
+`Songbase 1911` query uses its separate catalog ID. Each result links to Songbase,
+and expanded context shows the locally stored lyrics. Everything includes songs;
+the balanced Bible/footnotes/ministry option keeps its existing source groups.
+
+The default export is English. Use `--language all` with a fresh dump filename
+for all available languages, or omit `--download` to import a saved full JSON
+export. Incremental updates are rejected; refresh from the original base index
+into a fresh output filename. The old index remains intact. Saved research jobs
+keep their original eligible titles when adding this collection.
+
+Chord markers are removed without breaking words. Identical alternate-tune
+lyrics are collapsed within a song; different versions remain. Verse and chorus
+text stays in the local index. Songs are labeled as lyrics, and the model is told
+to distinguish them from Scripture and prose teaching. The export does not
+supply reliable lyric authorship, so no author names are guessed. Songbook
+entries pointing to absent song records are skipped and recorded in the import
+audit; their lyrics are not invented.
+
+Dump files, lyrics, embeddings and indexes stay under ignored `data/`. Code
+packages include the importer, not the songs. Song rights remain with their
+owners; the app code license does not relicense the lyrics.
+[Songbase API documentation](https://github.com/ReganRyanNZ/songbase#using-the-api).

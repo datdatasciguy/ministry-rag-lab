@@ -87,7 +87,8 @@ def create_app(index_path, model, desktop=False):
         return {"books": index.titles(), "chunks": index.manifest["chunks"],
                 "hybrid": bool(index.manifest["embedding_model"]), "model": model,
                 "verified_authors": len(index.authors), "collections": index.collections,
-                "display_verse": index.manifest.get("display_verse"), "desktop": desktop}
+                "display_verse": index.manifest.get("display_verse"), "desktop": desktop,
+                "songbase": index.manifest.get("songbase")}
 
     @app.post("/api/query")
     def query(body: Query):

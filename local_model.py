@@ -460,6 +460,13 @@ def generate(question, hits, model, length="medium", words=250, allow_extrapolat
                    "to a specific topic or book, or asking for an explicit source list. "
                    "Never claim that no such list exists anywhere in the ministry.")
     kinds = {row["kind"] for row in sources}
+    if 'songs' in kinds:
+        system += (" Song sources are lyrics, not prose ministry or Scripture. For song-finding "
+                   "questions, name relevant songs and supplied songbook numbers and explain "
+                   "the topic connection with citations. Do not confuse Songbase IDs with hymn "
+                   "numbers. Do not attribute lyrics to Witness Lee or Watchman Nee without "
+                   "supplied author evidence. A hymn's poetic expression is not proof of a "
+                   "doctrinal claim beyond what it actually says.")
     if "ministry" in kinds and kinds & {"bible", "notes"}:
         system += (" Give comparable attention to the ministry passages and the Bible/footnote "
                    "evidence. Cite both groups when they support the answer. Explain how they "

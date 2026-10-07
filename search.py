@@ -151,6 +151,8 @@ class SearchIndex:
             row["web_reference"] = True
             row["publisher"] = page["publisher"]
             row["fetched_at"] = page["fetched_at"]
+        if row["kind"] == "songs":
+            row.update(self.manifest.get("songs", {}).get(row["title"], {}))
         if row["kind"] in {"bible", "notes"}:
             row["url"] = "/api/reference/" + row["section_id"]
         return row
@@ -168,14 +170,17 @@ class SearchIndex:
             section = db.execute("SELECT * FROM source_sections WHERE id=?", (chunk["section_id"],)).fetchone()
             if not section:
                 raise ValueError("Source section unavailable")
-            start = section["text"].find(chunk["text"])
+            normalized = " ".join(section["text"].split())
+            start = normalized.find(" ".join(chunk["text"].split()))
             if start < 0:
                 raise ValueError("Passage does not match its stored source")
-            start = len(section["text"][:start].split())
+            start = len(normalized[:start].split())
             end = start + len(chunk["text"].split())
             text = section["text"].split()
             left, right = max(0, start - words), min(len(text), end + words)
-            blocks = [{"heading": section["heading"], "text": " ".join(text[left:right])}]
+            spans = list(re.finditer(r"\S+", section["text"]))
+            excerpt = section["text"][spans[left].start():spans[right - 1].end()]
+            blocks = [{"heading": section["heading"], "text": excerpt}]
             more = left > 0 or right < len(text)
             for before, remaining in [(True, words - (start - left)), (False, words - (right - end))]:
                 operator, direction = ("<", "DESC") if before else (">", "ASC")
@@ -201,7 +206,7 @@ class SearchIndex:
         scope = author_scope(question, author)
         if scope not in {"all", "Witness Lee", "Watchman Nee"}:
             raise ValueError("Choose all authors, Witness Lee or Watchman Nee")
-        if collection not in {"all", "ministry", "bible", "notes", "balanced"}:
+        if collection not in {"all", "ministry", "bible", "notes", "balanced", "songs"}:
             raise ValueError("Choose a supported collection")
         if collection == "balanced":
             if limit < 3:
@@ -237,6 +242,23 @@ class SearchIndex:
         direct = []
         with closing(self.connect()) as db:
             db.row_factory = sqlite3.Row
+            song_number = re.search(r"\b(hymns?|hymnal|songbase(?: song)?|blue songbook)\s*#?\s*(\d+)\b", question, re.I)
+            if song_number and db.execute("SELECT name FROM sqlite_master WHERE name='song_catalog'").fetchone():
+                label, number = song_number.groups()
+                if label.casefold().startswith('songbase'):
+                    song_rows = db.execute('SELECT DISTINCT section_id,title FROM song_catalog WHERE song_id=?', (number,)).fetchall()
+                    # Songs without a songbook number still have a Songbase ID.
+                    song_rows = [*song_rows, *db.execute('SELECT id AS section_id,title FROM source_sections WHERE id=?', ('songbase-' + number,)).fetchall()]
+                else:
+                    name = 'Blue Songbook' if label.casefold() == 'blue songbook' else 'Hymnal'
+                    song_rows = db.execute('SELECT section_id,title FROM song_catalog WHERE number=? AND book=?', (number, name)).fetchall()
+                direct = [row for song in song_rows if song['title'] in eligible_titles
+                          for row in db.execute('SELECT rowid FROM chunks WHERE section_id=? ORDER BY rowid LIMIT 1', (song['section_id'],))]
+                if not direct:
+                    return []
+                for rank, row in enumerate(direct, 1):
+                    scores[row[0]] += 1 / rank
+                    ranks.setdefault(row[0], {})['song'] = rank
             if reference:
                 placeholders = ",".join("?" for title in titles)
                 direct = db.execute("SELECT rowid FROM chunks WHERE title IN (" + placeholders + ") AND (heading=? OR heading LIKE ?) ORDER BY length(heading), rowid LIMIT ?", [*titles, reference, reference + " footnote %", candidates]).fetchall()

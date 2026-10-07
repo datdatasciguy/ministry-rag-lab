@@ -47,6 +47,14 @@ class ResearchJobs:
         value = [str(self.index.path), stat.st_size, stat.st_mtime_ns, self.index.manifest]
         return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
+    def matches_index(self, meta):
+        if meta['fingerprint'] == self.fingerprint():
+            return True
+        # An additive song import retains old research scopes and original source text.
+        return (meta['fingerprint'] in self.index.manifest.get('compatible_research_fingerprints', [])
+                and all(self.index.collections.get(title, 'ministry') != 'songs'
+                        for title in meta.get('eligible_titles', [])))
+
     def read(self, db):
         return json.loads(db.execute("SELECT value FROM metadata").fetchone()[0])
 
@@ -69,6 +77,8 @@ class ResearchJobs:
         titles = []
         for title in self.index.titles():
             kind = self.index.collections.get(title, "ministry")
+            if collection == "balanced" and kind not in {"ministry", "bible", "notes"}:
+                continue
             if collection not in {"all", "balanced", kind}:
                 continue
             if collection == "balanced" and kind in {"bible", "notes"}:
@@ -206,7 +216,7 @@ class ResearchJobs:
                 raise ValueError("A Deep research run is already active. Pause it before starting another")
             with closing(self.connect(job_id)) as db, db:
                 meta = self.read(db)
-                if meta["fingerprint"] != self.fingerprint():
+                if not self.matches_index(meta):
                     raise ValueError("The source index changed. Start a new research job to keep coverage accurate")
                 if model_digest(meta["model"]) != meta["model_digest"]:
                     raise ValueError("The local model changed. Restore that version or start a new research job")
@@ -491,7 +501,7 @@ class ResearchJobs:
 
     def section(self, job_id, finding_id):
         with closing(self.connect(job_id)) as db:
-            if self.read(db)["fingerprint"] != self.fingerprint():
+            if not self.matches_index(self.read(db)):
                 raise ValueError("Source index changed; the saved citation cannot be verified against this index")
             finding = db.execute("SELECT * FROM findings WHERE id=?", (finding_id,)).fetchone()
             if not finding:
