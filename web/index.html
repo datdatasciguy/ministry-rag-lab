@@ -34,9 +34,10 @@ details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{curs
 <p id="preset-help" class="muted"></p>
 <details id="advanced"><summary>Advanced · filters, model and exact limits</summary>
 <div class="advanced-controls">
-<label><input id="song-meaning" type="checkbox" checked> Whole-song meaning · interpret poetic themes for song topic searches</label>
+<label><input id="song-meaning" type="checkbox" checked> Song meaning · interpret poetic themes and sentiments</label>
+<label>Meaning focus <select id="song-focus"><option value="either">Whole song or a single stanza</option><option value="whole">Whole song’s main theme only</option></select></label>
 <label>Songs to review <input id="song-candidates" type="number" min="8" max="60" value="32"></label>
-<p class="muted">For Songs &amp; hymns, the local model reads whole lyrics and ranks their fit to your topic or situation. This takes longer; repeat assessments are cached locally. Turn this off for ordinary retrieval. Exact hymn numbers and full titles use direct lookup.</p>
+<p class="muted">For Songs &amp; hymns, the local model reads whole lyrics and can match a particular stanza or refrain. Matching blocks are highlighted in context. Choose whole-song focus when you want the main theme to fit. This takes longer; repeat assessments are cached locally. Turn this off for ordinary retrieval. Exact hymn numbers and full titles use direct lookup.</p>
 <label><input id="source-diversity" type="checkbox"> Diversify answer sources · replace passages making almost the same point</label>
 <label>Similarity screening threshold <input id="diversity-threshold" type="number" min="0.85" max="0.99" step="0.01" value="0.92"></label>
 <label>Comparison limit <input id="diversity-checks" type="number" min="1" max="30" value="12"></label>

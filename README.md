@@ -265,27 +265,36 @@ owners; the app code license does not relicense the lyrics.
 
 ### Match a song's meaning
 
-Songs & hymns uses whole-song meaning matching by default for topic and situation
-searches. It expands the search with conceptual phrases and gives embedding
-retrieval more weight than exact words. The local model first interprets each
-candidate's full lyrics without seeing your question, including its central
-subject, poetic imagery, emotional direction and present/future setting. Short
-lyric anchors must match the stored text before that interpretation is cached.
-A separate pass compares the meaning with your requested purpose and situation.
-An incidental word or emotion cannot outweigh a mismatch in the main purpose.
-A final comparison ranks the candidate meanings side by side and can omit weaker
-songs even when they initially received a relatedness score.
+Songs & hymns reviews poetic meaning by default for topic and situation searches.
+Conceptual query expansion and weighted embedding retrieval find candidates beyond
+exact words. The local model first reads each complete song independently,
+including imagery, emotional direction, speaker and present/future setting.
+Supporting lyric line IDs must exist in the stored text before interpretation
+is cached. A separate assessment compares the request with the whole meaning
+and numbered lyric blocks: stanzas or refrains.
 
-Only genuinely related or strong thematic matches are returned; the result count
-can be smaller than requested. The answer model receives the same complete
-lyrics that were reviewed. Sources show a brief fit explanation, preserved lyric
-formatting and their original Songbase links. Interpretations and fit scores are
-model judgments, not guarantees that every metaphor was understood correctly.
+The default **Whole song or a single stanza** focus can recommend a song for one
+particular stanza or refrain. That passage need
+not be the song's main theme, but its surrounding context must support the
+interpretation. A shared word does not justify changing its subject, addressee
+or destination. Advanced also offers **Whole song's main theme only**.
 
-Advanced lets you turn this off or review 8–60 candidate songs (32 by default).
-Exact hymn numbers and complete song titles bypass this review. Initial reviews
-take longer; model/source-specific interpretations and query assessments are
-cached under private `data/`. If review fails, the app labels the ordinary
-retrieval fallback. Selection covers a retrieved candidate pool, not every song
-in the catalog. None of the local interpretations, lyrics or caches are packaged
-or committed, and no LLM is trained by this feature.
+A final comparison ranks contextual fits side by side and can omit weaker songs.
+The result count can be smaller than requested. Sources explain whether the fit
+is the whole song or a specific numbered stanza or refrain; that block is highlighted
+inside the complete lyrics. The answer model receives those same complete lyrics.
+These are model judgments, not guarantees that every metaphor is understood.
+
+Advanced lets you turn review off or assess 8–60 candidates (32 by default).
+Exact hymn numbers and complete titles use direct lookup. Initial reviews take
+longer; interpretations and focus-specific assessments are cached privately.
+Malformed review batches are split into smaller batches; a failed individual
+review gets one retry. Valid reviews survive other failures. Unreviewed songs
+are omitted, and a failed final comparison uses the validated fit scores.
+Model outages stop further review calls. If no candidates can be reviewed,
+ordinary retrieval is labeled explicitly. Song matching details show the
+failing stage and reason; the local app log records these without lyrics.
+
+Selection covers retrieved candidates, not every song in the catalog. Lyrics,
+interpretations and caches remain under ignored private `data/`; they are never
+packaged or committed. This feature does not train or fine-tune an LLM.

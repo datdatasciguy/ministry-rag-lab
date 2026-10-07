@@ -14,7 +14,7 @@ from local_model import generate, related_searches, plan_retrieval, request as m
 from model_options import PROFILES, read_settings, model_profile
 from search import SearchIndex, related_topics
 from source_diversity import SourceDiversity
-from song_meaning import SongMeaning
+from song_meaning import SongMeaning, REVIEW_ERRORS, review_failure
 from catalog import author_scope
 from research import ResearchJobs
 from official_sources import normalize_ministry_question
@@ -39,6 +39,7 @@ class Query(BaseModel):
     answer_original: bool = False
     skip_wording_guidance: bool = False
     song_meaning: bool = True
+    song_focus: str = Field(default="either", pattern="^(either|whole)$")
     song_candidates: int = Field(default=32, ge=8, le=60)
     source_diversity: bool = False
     diversity_threshold: float = Field(default=0.92, ge=0.85, le=0.99)
@@ -150,15 +151,22 @@ def create_app(index_path, model, desktop=False):
                 if body.collection == 'songs' and body.song_meaning:
                     try:
                         pool, report = songs.search(body.question, mode, pool_limit, body.book,
-                            search_author, selected_model, body.song_candidates)
+                            search_author, selected_model, body.song_candidates, body.song_focus)
+                    except REVIEW_ERRORS as error:
+                        song_reports.clear()
+                        failure = review_failure('song matching', error)
+                        song_notices.append('Song meaning review could not complete. ' + failure['cause'] +
+                            ' These results use ordinary retrieval; their contextual fit has not been reviewed.')
+                    else:
                         song_notices.clear()
                         song_reports.clear()
                         if report:
                             song_reports.append(report)
+                            if report['omitted']:
+                                song_notices.append(f"Meaning review completed for {report['reviewed']} of {report['candidates']} candidates; {report['omitted']} could not be reviewed and were omitted.")
+                            elif not report['comparative'] and report['reviewed']:
+                                song_notices.append('Songs were reviewed for contextual fit; the final comparison failed, so they are ordered by their reviewed fit scores.')
                         return select_sources(pool)
-                    except (ValueError, RuntimeError, KeyError):
-                        song_reports.clear()
-                        song_notices.append('Whole-song meaning review could not complete. These results use ordinary retrieval; their fit to your situation has not been reviewed.')
                 pool = index.search(search_question, mode, pool_limit, body.book, search_author, body.collection, preferred_topics)
                 return select_sources(pool)
             hits = retrieve(body.mode)
