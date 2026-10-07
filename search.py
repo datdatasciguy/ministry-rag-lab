@@ -296,7 +296,7 @@ class SearchIndex:
                 similarity = (self.matrix @ query) / max(np.linalg.norm(query), 1e-12)
                 eligible = np.array([i for i, row in enumerate(self.vector_rows) if row[1] in eligible_titles], dtype=int)
                 for rank, index in enumerate(eligible[np.argsort(-similarity[eligible], kind="stable")[:candidates]], 1):
-                    scores[self.vector_rows[index][0]] += 1 / (60 + rank)
+                    scores[self.vector_rows[index][0]] += (3 if collection == 'songs' else 1) / (60 + rank)
                     ranks.setdefault(self.vector_rows[index][0], {})["meaning"] = rank
             hits = []
             seen = set()

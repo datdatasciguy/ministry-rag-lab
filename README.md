@@ -262,3 +262,30 @@ Dump files, lyrics, embeddings and indexes stay under ignored `data/`. Code
 packages include the importer, not the songs. Song rights remain with their
 owners; the app code license does not relicense the lyrics.
 [Songbase API documentation](https://github.com/ReganRyanNZ/songbase#using-the-api).
+
+### Match a song's meaning
+
+Songs & hymns uses whole-song meaning matching by default for topic and situation
+searches. It expands the search with conceptual phrases and gives embedding
+retrieval more weight than exact words. The local model first interprets each
+candidate's full lyrics without seeing your question, including its central
+subject, poetic imagery, emotional direction and present/future setting. Short
+lyric anchors must match the stored text before that interpretation is cached.
+A separate pass compares the meaning with your requested purpose and situation.
+An incidental word or emotion cannot outweigh a mismatch in the main purpose.
+A final comparison ranks the candidate meanings side by side and can omit weaker
+songs even when they initially received a relatedness score.
+
+Only genuinely related or strong thematic matches are returned; the result count
+can be smaller than requested. The answer model receives the same complete
+lyrics that were reviewed. Sources show a brief fit explanation, preserved lyric
+formatting and their original Songbase links. Interpretations and fit scores are
+model judgments, not guarantees that every metaphor was understood correctly.
+
+Advanced lets you turn this off or review 8–60 candidate songs (32 by default).
+Exact hymn numbers and complete song titles bypass this review. Initial reviews
+take longer; model/source-specific interpretations and query assessments are
+cached under private `data/`. If review fails, the app labels the ordinary
+retrieval fallback. Selection covers a retrieved candidate pool, not every song
+in the catalog. None of the local interpretations, lyrics or caches are packaged
+or committed, and no LLM is trained by this feature.

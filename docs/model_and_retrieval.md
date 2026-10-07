@@ -94,6 +94,11 @@ by reciprocal rank fusion:
 RRF(d) = sum(1 / (60 + rank_in_each_result_list(d)))
 ```
 
+Song-only hybrid searches use weighted RRF: the semantic list contributes
+`3 / (60 + rank)`, while the lexical list contributes `1 / (60 + rank)`.
+Other collections retain the equal-weight fusion above. This weight is a chosen
+retrieval heuristic, not a fitted parameter or a measured optimum.
+
 Fusion uses rank positions because BM25 and cosine scores have different scales.
 Neither score is a probability that an answer is correct.
 [SQLite FTS5](https://www.sqlite.org/fts5.html),
@@ -250,3 +255,39 @@ The [website importer](website_sources.md) copies the existing private index int
 Both controls are off by default. **Show a response even if source checks fail** exposes the last rejected draft after the attempt limit, with an unverified warning and citation markers removed. It does not label the draft as verified. **Skip inappropriate-wording guidance** skips the app’s wording rewrite and early refusal, sending the original question to the local model. A notice identifies the override; model behavior and evidence checks remain active. This wording option also applies when starting Deep research. The options do not change source filters, localhost access checks or source-as-data handling.
 
 Known misspellings of the Lord's recovery are normalized for routing and retrieval, with a visible search-wording notice when corrected. The local query planner can also improve retrieval wording for other introductory questions.
+
+## Poetic meaning in song recommendations
+
+For topical Songs & hymns queries, the app uses the local answer model as a
+retrieval planner and relevance judge before answer generation:
+
+1. Interpret the requested topic or listener situation and produce up to two
+   complementary conceptual queries. Retain the original query. Merge retrieved
+   candidates across queries with rank-based scores, giving the original query
+   a weight of 1.5 and each expansion a weight of 1.
+2. Read each candidate's **complete lyrics**, independently of the user question.
+   Interpret the central subject, imagery, emotional direction and temporal or
+   experiential setting. The model selects supporting line numbers; code checks
+   their bounds and resolves them to actual stored lines. This prevents invented
+   anchor quotations, but does not prove that the interpretation is correct.
+3. Compare that interpretation with the request. Purpose and situation each get
+   an ordinal 0–3 fit judgment. The smaller score controls initial eligibility;
+   a shared emotion cannot compensate for a weak purpose score. Only scores of
+   at least 2 proceed to a side-by-side comparison that orders the best matches
+   and can omit weaker candidates rather than filling a quota.
+4. Supply the selected complete lyrics to generation, with the existing citation
+   and quotation checks. Keep the original song URLs and lyric formatting.
+
+This is inference with pretrained models, not a trained cross-encoder or new
+embedding model. The default review pool is 32 songs, adjustable from 8 to 60.
+Review calls are bounded by that pool and model context, with validated JSON IDs
+and private caches keyed by model digest, content and query. Exact number and
+complete-title lookups bypass the review. Users can disable it in Advanced;
+review failures label the ordinary-retrieval fallback.
+
+The development check used a loneliness/church-home request: O home in the
+church ranked first, and a song about awaiting the Lord's return was omitted.
+A different query about longing for the Lord's return selected songs on that
+subject. These are targeted checks, not an accuracy benchmark. Poetic
+interpretation, candidate recall, ranking judgments and query expansion can
+still be wrong. No rule assigns those example songs a preferred position.

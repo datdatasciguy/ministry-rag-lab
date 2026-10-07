@@ -164,13 +164,14 @@ function showSource(source, number, container) {
   card.append(heading);
   const attribution = source.kind === 'songs' ? 'Song · Songbase · ' + source.language + (source.songbooks?.length ? ' · ' + source.songbooks.join(' / ') : '') : source.web_reference ? 'Reviewed website · ' + source.publisher + ' · retrieved ' + source.fetched_at.slice(0, 10) : source.kind === 'bible' ? 'Bible text · Recovery Version' : source.kind === 'notes' ? 'Footnote commentary · Recovery Version' : 'Ministry · ' + (source.author === 'Unverified' ? 'Authorship not verified' : source.author);
   card.append(makeNode('p', attribution, 'muted'));
-  const labels = {song: 'Song number', words: 'Words', meaning: 'Meaning', reference: 'Verse reference', website: 'Reviewed website priority'};
+  const labels = {song_meaning: 'Whole-song meaning', song: 'Song number', words: 'Words', meaning: 'Meaning', reference: 'Verse reference', website: 'Reviewed website priority'};
   card.append(makeNode('p', Object.entries(source.retrieval_ranks || {}).map(([kind, rank]) => `${labels[kind]} rank ${rank}`).join(' · '), 'muted'));
   const pages = (source.pages || []).filter(page => page !== null);
   if (pages.length) {
     const label = source.url ? 'Source pages' : 'Export pages';
     card.append(makeNode('p', `${label}: ${[...new Set(pages)].join('–')}`, 'muted'));
   }
+  if (source.song_match) card.append(makeNode('p', 'Why it fits: ' + source.song_match.reason, 'muted'));
   card.append(highlightedText('p', source.text, source.matched_terms));
   const expanded = makeNode('div', '', 'context');
   const expand = makeNode('button', source.kind === 'songs' ? 'Show more lyrics' : 'Expand context');
@@ -217,7 +218,7 @@ function showSource(source, number, container) {
       expand.disabled = false;
     }
   });
-  card.append(expand, collapse, expanded);
+  if (!source.whole_song) card.append(expand, collapse, expanded);
   if (source.url) {
     try {
       const url = new URL(source.url, location.origin);
@@ -330,6 +331,7 @@ async function submitQuery(event) {
   const answer = event.submitter?.dataset.answer === 'true';
   element('status').className = '';
   element('status').textContent = answer ? `Finding passages and writing a local answer · up to ${element('answer-attempts').value} attempts…` : 'Finding passages…';
+  if (element('collection').value === 'songs' && element('song-meaning').checked) element('status').textContent = 'Finding candidates and reading whole-song meaning with your local model · initial reviews take longer…';
   element('answer').replaceChildren();
   element('results').replaceChildren();
   const controls = [...element('search').querySelectorAll('button, select, textarea, input')];
@@ -341,6 +343,8 @@ async function submitQuery(event) {
   payload.answer_original = element('answer-original').checked;
   payload.skip_wording_guidance = element('skip-wording-guidance').checked;
   payload.source_diversity = element('source-diversity').checked;
+  payload.song_meaning = element('song-meaning').checked;
+  payload.song_candidates = Number(element('song-candidates').value);
   payload.diversity_threshold = Number(element('diversity-threshold').value);
   payload.diversity_checks = Number(element('diversity-checks').value);
   controls.forEach(control => control.disabled = true);
@@ -418,6 +422,14 @@ async function submitQuery(event) {
         element('answer').append(draft);
       }
     }
+    if (data.song_matching_notice) element('answer').append(makeNode('p', data.song_matching_notice, 'scope-warning'));
+    if (data.song_matching) {
+      const details = makeNode('details', '');
+      details.append(makeNode('summary', 'Song matching details'),
+        makeNode('p', 'Interpreted need: ' + data.song_matching.need),
+        makeNode('p', `${data.song_matching.reviewed} whole songs reviewed · ${data.song_matching.selected} thematic matches · ${data.song_matching.cache_hits} cached assessments. Selection is from retrieved candidates, not a complete reading of every song.`, 'muted'));
+      element('answer').append(details);
+    }
     showSources(data.sources);
     const scope = data.scope === 'all' ? 'All authors' : data.scope + (data.collection === 'balanced' ? ' · ministry authorship' : ' · verified authorship only');
     const collection = {all: 'Everything', balanced: 'Balanced sources', ministry: 'Ministry books', bible: 'Bible verses only', notes: 'Bible footnotes only', songs: 'Songs & hymns'}[data.collection];
@@ -434,7 +446,7 @@ async function submitQuery(event) {
 }
 
 element('search').addEventListener('submit', submitQuery);
-for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation', 'allow-unverified', 'expand-related', 'answer-original', 'skip-wording-guidance', 'source-diversity', 'diversity-threshold', 'diversity-checks']) {
+for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation', 'allow-unverified', 'expand-related', 'answer-original', 'skip-wording-guidance', 'song-meaning', 'song-candidates', 'source-diversity', 'diversity-threshold', 'diversity-checks']) {
   element(id).addEventListener('change', () => {
     element('answer').replaceChildren();
     element('results').replaceChildren();

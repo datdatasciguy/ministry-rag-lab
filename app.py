@@ -14,6 +14,7 @@ from local_model import generate, related_searches, plan_retrieval, request as m
 from model_options import PROFILES, read_settings, model_profile
 from search import SearchIndex, related_topics
 from source_diversity import SourceDiversity
+from song_meaning import SongMeaning
 from catalog import author_scope
 from research import ResearchJobs
 from official_sources import normalize_ministry_question
@@ -37,6 +38,8 @@ class Query(BaseModel):
     expand_related_topics: bool = True
     answer_original: bool = False
     skip_wording_guidance: bool = False
+    song_meaning: bool = True
+    song_candidates: int = Field(default=32, ge=8, le=60)
     source_diversity: bool = False
     diversity_threshold: float = Field(default=0.92, ge=0.85, le=0.99)
     diversity_checks: int = Field(default=12, ge=1, le=30)
@@ -58,6 +61,7 @@ def create_app(index_path, model, desktop=False):
     index = SearchIndex(index_path)
     research = ResearchJobs(index)
     diversity = SourceDiversity(index)
+    songs = SongMeaning(index)
     app = FastAPI(title="Ministry Search RAG", docs_url=None, redoc_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
     web = Path(__file__).parent / "web"
@@ -115,7 +119,7 @@ def create_app(index_path, model, desktop=False):
             selected_model = body.model or model
             preferred_topics = None
             planning_warning = ''
-            if body.answer:
+            if body.answer and body.collection != 'songs':
                 try:
                     plan = plan_retrieval(body.question, selected_model)
                     search_question = plan['search_question']
@@ -128,6 +132,11 @@ def create_app(index_path, model, desktop=False):
                     planning_warning = 'Search planning could not complete; used the original question.'
             search_author = scope if body.author == 'auto' else body.author
             selection_reports = []
+            song_reports = []
+            song_notices = []
+            def song_status(count):
+                return {'song_matching': {**song_reports[-1], 'selected': count} if song_reports else None,
+                        'song_matching_notice': song_notices[-1] if song_notices else ''}
             limit = min(body.answer_sources, model_profile(selected_model)['sources']) if body.answer and body.source_diversity else body.answer_sources if body.answer else body.limit
             pool_limit = min(100, max(limit * 3, limit + 8)) if body.answer and body.source_diversity else limit
             def select_sources(pool):
@@ -138,6 +147,18 @@ def create_app(index_path, model, desktop=False):
                 selection_reports.append(report)
                 return selected
             def retrieve(mode):
+                if body.collection == 'songs' and body.song_meaning:
+                    try:
+                        pool, report = songs.search(body.question, mode, pool_limit, body.book,
+                            search_author, selected_model, body.song_candidates)
+                        song_notices.clear()
+                        song_reports.clear()
+                        if report:
+                            song_reports.append(report)
+                        return select_sources(pool)
+                    except (ValueError, RuntimeError, KeyError):
+                        song_reports.clear()
+                        song_notices.append('Whole-song meaning review could not complete. These results use ordinary retrieval; their fit to your situation has not been reviewed.')
                 pool = index.search(search_question, mode, pool_limit, body.book, search_author, body.collection, preferred_topics)
                 return select_sources(pool)
             hits = retrieve(body.mode)
@@ -192,9 +213,9 @@ def create_app(index_path, model, desktop=False):
                 if planning_warning:
                     result.setdefault("evidence_warnings", []).append(planning_warning)
                 counts = dict(Counter(hit["kind"] for hit in result["sources"]))
-                return {**result, **interpretation, "scope": scope, "collection": body.collection,
+                return {**result, **interpretation, **song_status(len(result["sources"])), "scope": scope, "collection": body.collection,
                         "answer_sources": len(result["sources"]), "source_counts": counts, "related_topics": related}
-            return {"sources": hits, **interpretation, "answer": "No matching passages found in this scope." if not hits else "", "citations": [], "abstain": not hits, "scope": scope, "collection": body.collection, "source_counts": counts, "related_topics": related}
+            return {"sources": hits, **interpretation, **song_status(len(hits)), "answer": "No matching passages found in this scope." if not hits else "", "citations": [], "abstain": not hits, "scope": scope, "collection": body.collection, "source_counts": counts, "related_topics": related}
         except (ValueError, RuntimeError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
