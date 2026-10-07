@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from local_model import generate, request as model_request
+from local_model import generate, related_searches, request as model_request
 from model_options import PROFILES, read_settings
 from search import SearchIndex, related_topics
 from catalog import author_scope
@@ -29,6 +29,8 @@ class Query(BaseModel):
     model: str = Field(default="", max_length=120)
     allow_extrapolation: bool = False
     max_answer_attempts: int = Field(default=3, ge=1, le=5)
+    allow_unverified_response: bool = False
+    expand_related_topics: bool = True
 
 def create_app(index_path, model, desktop=False):
     index = SearchIndex(index_path)
@@ -66,15 +68,49 @@ def create_app(index_path, model, desktop=False):
             scope = author_scope(body.question, body.author)
             counts = dict(Counter(hit["kind"] for hit in hits))
             related = related_topics(body.question)
-            if body.answer and hits:
+            if body.answer:
                 selected_model = body.model or model
                 retry_mode = "lexical" if body.mode == "hybrid" else (
                     "hybrid" if index.manifest["embedding_model"] else "lexical")
                 retry_search = lambda: index.search(body.question, retry_mode, body.answer_sources,
                                                    body.book, body.author, body.collection)
-                result = generate(body.question, hits, selected_model, body.answer_length,
-                                  body.answer_words, body.allow_extrapolation,
-                                  body.max_answer_attempts, retry_search)
+                if hits:
+                    result = generate(body.question, hits, selected_model, body.answer_length,
+                                      body.answer_words, body.allow_extrapolation,
+                                      body.max_answer_attempts, retry_search, body.allow_unverified_response)
+                else:
+                    result = {"sources": [], "answer": "No matching passages found in this scope.",
+                              "citations": [], "abstain": True, "support_level": "none", "attempts": 0}
+                used_attempts = result["attempts"]
+                if body.expand_related_topics and result["abstain"] and used_attempts < body.max_answer_attempts:
+                    try:
+                        terms = related_searches(body.question, selected_model)
+                        # Keep the author resolved from the original question during expansion.
+                        pools = [index.search(term, body.mode, body.answer_sources, body.book,
+                                              scope if body.author == "auto" else body.author, body.collection)
+                                 for term in terms]
+                        expanded = []
+                        seen = set()
+                        for rank in range(body.answer_sources):
+                            for pool in pools:
+                                if rank < len(pool):
+                                    hit = pool[rank]
+                                    key = hit.get("section_id", hit["id"])
+                                    if key not in seen and len(expanded) < body.answer_sources:
+                                        seen.add(key)
+                                        expanded.append(hit)
+                        if expanded:
+                            result = generate(body.question, expanded, selected_model, body.answer_length,
+                                              body.answer_words, body.allow_extrapolation,
+                                              body.max_answer_attempts - used_attempts, None,
+                                              body.allow_unverified_response)
+                            result["attempts"] += used_attempts
+                            result["recovery_notice"] = f"Used {result['attempts']} answer attempts across the initial and related-topic searches."
+                            result.setdefault("evidence_warnings", []).append("Related-topic search was used because the first sample did not address the question. These search hypotheses do not establish the ministry's position on the original topic.")
+                        if terms:
+                            related = list(dict.fromkeys([*related, *terms]))
+                    except (ValueError, RuntimeError) as error:
+                        result.setdefault("evidence_warnings", []).append("Related-topic search could not complete. The first response and its sources are shown.")
                 counts = dict(Counter(hit["kind"] for hit in result["sources"]))
                 return {**result, "scope": scope, "collection": body.collection,
                         "answer_sources": len(result["sources"]), "source_counts": counts, "related_topics": related}

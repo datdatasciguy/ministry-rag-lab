@@ -16,6 +16,7 @@ select,input{box-sizing:border-box;max-width:100%}
 :root{font-family:system-ui;color:#253129;background:#f5f4ed}body{max-width:1000px;margin:48px auto;padding:0 24px}h1{font-family:Georgia,serif;font-size:42px;margin-bottom:8px}.muted{color:#667369}form,.answer,.source{background:white;border:1px solid #d9dfd5;padding:22px;border-radius:12px;margin:16px 0}textarea{box-sizing:border-box;width:100%;padding:14px;font:inherit;border:1px solid #b8c4b8;border-radius:6px;resize:vertical}select,button{font:inherit;padding:10px;border-radius:6px;margin:12px 8px 0 0;border:1px solid #b8c4b8}button{background:#315e49;color:white;cursor:pointer}button:disabled{opacity:.5}.text{white-space:pre-wrap;line-height:1.6}a{color:#315e49}h3{margin-top:0}.error{color:#8c2727}label{display:inline-block;margin-right:12px}
 
 .basic-controls{display:flex;flex-wrap:wrap;gap:12px}.basic-controls label{flex:1;min-width:220px;margin:0}.basic-controls select{display:block;width:100%;margin-right:0}
+.scope-warning{background:#fff5d6;border-left:4px solid #ad790f;padding:16px;margin-bottom:18px;line-height:1.6}.scope-warning strong{display:block;font-size:1.15em}.scope-warning p{margin-bottom:0}
 details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{cursor:pointer;color:#315e49;font-weight:600}.advanced-controls{padding-top:10px}
 .answer-body{line-height:1.65}.answer-body p{margin:14px 0}.answer-body h3,.answer-body h4,.answer-body h5,.answer-body h6{margin:22px 0 8px;font-size:1.1em}.answer-body li{margin:8px 0}.answer-body blockquote{border-left:3px solid #b8c4b8;margin:16px 0;padding-left:16px}.answer-body pre{white-space:pre-wrap}.answer-body code{background:#f5f4ed;padding:2px 4px}.citation{white-space:nowrap;font-weight:600;scroll-margin-top:20px}.source:focus{outline:2px solid #315e49}
 </style>
@@ -34,6 +35,10 @@ details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{curs
 <div class="advanced-controls">
 <label><input id="allow-extrapolation" type="checkbox"> Allow a separate, clearly labeled extrapolation</label>
 <p class="muted">Off by default. Related themes do not prove an answer. Any speculative reflection is shown separately and is not attributed to the ministry.</p>
+<label><input id="allow-unverified" type="checkbox"> Show an unverified model draft if source checks fail</label>
+<p class="muted">Off by default. After the attempt limit, you can inspect the rejected response with a warning and no citation links. It may contain unsupported claims or invented quotations. Source filters and checks still apply.</p>
+<label><input id="expand-related" type="checkbox" checked> Search related concepts if the first passages do not address the question</label>
+<p class="muted">One extra local keyword-generation step suggests up to three search phrases. Author, book and collection filters stay in place; answer attempts remain bounded. Related themes are background, not a direct position on your question.</p>
 <label class="book-control">Book <select id="book"><option value="">All books</option></select></label>
 <label>Author <select id="author"><option value="auto">From your question</option><option value="all">Whole ministry / all authors</option><option>Witness Lee</option><option>Watchman Nee</option></select></label>
 

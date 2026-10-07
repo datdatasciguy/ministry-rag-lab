@@ -334,6 +334,8 @@ async function submitQuery(event) {
   const disabled = controls.map(control => control.disabled);
   const payload = {question: element('question').value, book: element('book').value, author: element('author').value, collection: element('collection').value, mode: element('mode').value, limit: Number(element('limit').value), answer_sources: Number(element('answer-sources').value), answer_length: element('answer-length').value, answer_words: Number(element('answer-words').value), model: element('model').value, allow_extrapolation: element('allow-extrapolation').checked, answer};
   payload.max_answer_attempts = Number(element('answer-attempts').value);
+  payload.allow_unverified_response = element('allow-unverified').checked;
+  payload.expand_related_topics = element('expand-related').checked;
   controls.forEach(control => control.disabled = true);
   try {
     const response = await fetch('/api/query', {
@@ -345,7 +347,22 @@ async function submitQuery(event) {
     if (!response.ok) throw Error(typeof data.detail === 'string' ? data.detail : 'Please check your question.');
     if (data.answer) {
       const panel = makeNode('section', '', 'answer');
-      panel.append(makeNode('h3', data.abstain ? 'More evidence needed' : data.support_level === 'background' ? 'Related source teachings — broader principles' : 'Answer'));
+      if (data.scope_warning) {
+        const warning = makeNode('aside', '', 'scope-warning');
+        warning.setAttribute('role', 'note');
+        warning.append(makeNode('strong', 'Broad question — limited passage sample'), makeNode('p', data.scope_warning));
+        panel.append(warning);
+      }
+      const concerns = [...(data.evidence_warnings || []), ...(data.evidence_notes || []).map(note => 'Model-flagged concern (not independently verified): ' + note)];
+      if (concerns.length) {
+        const warning = makeNode('aside', '', 'scope-warning');
+        warning.setAttribute('role', 'note');
+        const list = makeNode('ul', '');
+        concerns.forEach(concern => list.append(makeNode('li', concern)));
+        warning.append(makeNode('strong', 'Evidence cautions'), list);
+        panel.append(warning);
+      }
+      panel.append(makeNode('h3', data.abstain ? 'More evidence needed' : data.scope_warning ? 'Findings from the retrieved passages' : data.support_level === 'background' ? 'Related source teachings — broader principles' : 'Answer'));
       if (data.support_level === 'background') panel.append(makeNode('p', 'These passages support related teachings. They do not directly establish an answer to your specific question; any application beyond them belongs in the separate extrapolation section.', 'muted'));
       panel.append(renderAnswer(data.answer, data.sources.length));
       if (data.citations?.length) {
@@ -370,6 +387,11 @@ async function submitQuery(event) {
         reflection.append(renderAnswer(data.extrapolation, 0));
         element('answer').append(reflection);
       }
+      if (data.unverified_response) {
+        const draft = makeNode('section', '', 'answer');
+        draft.append(makeNode('h3', 'Unverified model draft'), makeNode('p', 'This response failed source checks. It may be inaccurate. Citation markers were removed; do not attribute it to the ministry without checking the passages.', 'error'), renderAnswer(data.unverified_response, 0));
+        element('answer').append(draft);
+      }
     }
     showSources(data.sources);
     const scope = data.scope === 'all' ? 'All authors' : data.scope + (data.collection === 'balanced' ? ' · ministry authorship' : ' · verified authorship only');
@@ -387,7 +409,7 @@ async function submitQuery(event) {
 }
 
 element('search').addEventListener('submit', submitQuery);
-for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation']) {
+for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation', 'allow-unverified', 'expand-related']) {
   element(id).addEventListener('change', () => {
     element('answer').replaceChildren();
     element('results').replaceChildren();
