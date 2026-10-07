@@ -51,6 +51,8 @@ function renderAnswer(text, sourceCount) {
   const body = makeNode('div', '', 'answer-body');
   let block = null;
   let list = null;
+  let orderedList = null;
+  let orderedItem = null;
   let fenced = false;
   for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
     if (/^\s*```/.test(line)) {
@@ -58,6 +60,7 @@ function renderAnswer(text, sourceCount) {
       block = fenced ? makeNode('pre', '') : null;
       if (block) body.append(block);
       list = null;
+      orderedList = null; orderedItem = null;
       continue;
     }
     if (fenced) {
@@ -66,22 +69,33 @@ function renderAnswer(text, sourceCount) {
     }
     if (!line.trim()) { block = null; list = null; continue; }
     const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*$/);
-    const item = line.match(/^\s*(?:([-*+])|\d+[.)])\s+(.+)$/);
+    const item = line.match(/^\s*(?:([-*+])|(\d+)[.)])\s+(.+)$/);
     const quote = line.match(/^\s*>\s?(.*)$/);
     if (heading) {
       const node = makeNode('h' + Math.min(heading[1].length + 2, 6), '');
       appendInline(node, heading[2], sourceCount);
       body.append(node);
       block = null; list = null;
+      orderedList = null; orderedItem = null;
     } else if (item) {
       const tag = item[1] ? 'ul' : 'ol';
-      if (!list || list.localName !== tag) {
-        list = makeNode(tag, '');
-        body.append(list);
+      if (tag === 'ol') {
+        if (!orderedList) {
+          orderedList = makeNode('ol', '');
+          const start = Number(item[2]);
+          if (start >= 1 && start <= 1000000) orderedList.start = start;
+          body.append(orderedList);
+        }
+        list = orderedList;
+      } else if (!list || list.localName !== 'ul') {
+        list = makeNode('ul', '');
+        // Model drafts often leave supporting bullets unindented.
+        (orderedItem || body).append(list);
       }
       const node = makeNode('li', '');
-      appendInline(node, item[2], sourceCount);
+      appendInline(node, item[3], sourceCount);
       list.append(node);
+      if (tag === 'ol') orderedItem = node;
       block = null;
     } else {
       const tag = quote ? 'blockquote' : 'p';
@@ -91,6 +105,7 @@ function renderAnswer(text, sourceCount) {
       } else block.append(document.createTextNode(' '));
       appendInline(block, quote ? quote[1] : line, sourceCount);
       list = null;
+      orderedList = null; orderedItem = null;
     }
   }
   return body;
