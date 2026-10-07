@@ -38,6 +38,16 @@ def verse_reference(question):
             return f"{name} {int(match[1])}:{int(match[2])}"
     return ""
 
+def formatted_excerpt(text, passage):
+    normalized = " ".join(text.split())
+    offset = normalized.find(" ".join(passage.split()))
+    if offset < 0:
+        raise ValueError("Passage does not match its stored source")
+    start = len(normalized[:offset].split())
+    end = start + len(passage.split())
+    spans = list(re.finditer(r"\S+", text))
+    return text[spans[start].start():spans[end - 1].end()]
+
 def build_index(sources, output, embedding_model=None, progress=None, resume=False):
     output = Path(output)
     if output.exists():
@@ -153,6 +163,10 @@ class SearchIndex:
             row["fetched_at"] = page["fetched_at"]
         if row["kind"] == "songs":
             row.update(self.manifest.get("songs", {}).get(row["title"], {}))
+            with closing(self.connect()) as db:
+                section = db.execute('SELECT text FROM source_sections WHERE id=?', (row['section_id'],)).fetchone()
+            if section:
+                row['text'] = formatted_excerpt(section[0], row['text'])
         if row["kind"] in {"bible", "notes"}:
             row["url"] = "/api/reference/" + row["section_id"]
         return row

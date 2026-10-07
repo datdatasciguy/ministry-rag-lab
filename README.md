@@ -240,7 +240,8 @@ python app.py --index data/books-with-songs.sqlite
 Choose **Songs & hymns** to search titles, words or topics. Numbers such as
 `Hymn 1040` and `Blue Songbook 10` use the export's songbook mappings; a
 `Songbase 1911` query uses its separate catalog ID. Each result links to Songbase,
-and expanded context shows the locally stored lyrics. Everything includes songs;
+with verse and chorus line breaks preserved in source excerpts. Show more lyrics
+opens the locally stored surrounding verses. Everything includes songs;
 the balanced Bible/footnotes/ministry option keeps its existing source groups.
 
 The default export is English. Use `--language all` with a fresh dump filename

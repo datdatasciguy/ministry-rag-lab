@@ -136,7 +136,7 @@ function highlightedText(tag, text, terms = [], passage = '') {
   const node = makeNode(tag, '', 'text');
   const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const patterns = [];
-  if (passage) patterns.push(escape(passage));
+  if (passage) patterns.push(passage.trim().split(/\s+/).map(escape).join('\\s+'));
   if (terms.length) patterns.push('\\b(?:' + terms.map(escape).join('|') + ')\\b');
   if (!patterns.length) {
     node.textContent = text;
@@ -146,7 +146,7 @@ function highlightedText(tag, text, terms = [], passage = '') {
   for (const match of text.matchAll(new RegExp(patterns.join('|'), 'gi'))) {
     node.append(document.createTextNode(text.slice(end, match.index)));
     const mark = makeNode('mark', match[0]);
-    if (passage && match[0].toLowerCase() === passage.toLowerCase()) mark.className = 'retrieved';
+    if (passage && match[0].replace(/\s+/g, ' ').toLowerCase() === passage.replace(/\s+/g, ' ').toLowerCase()) mark.className = 'retrieved';
     node.append(mark);
     end = match.index + match[0].length;
   }
@@ -173,7 +173,7 @@ function showSource(source, number, container) {
   }
   card.append(highlightedText('p', source.text, source.matched_terms));
   const expanded = makeNode('div', '', 'context');
-  const expand = makeNode('button', 'Expand context');
+  const expand = makeNode('button', source.kind === 'songs' ? 'Show more lyrics' : 'Expand context');
   const collapse = makeNode('button', 'Hide context');
   collapse.type = 'button';
   collapse.hidden = true;
@@ -185,7 +185,7 @@ function showSource(source, number, container) {
   });
   expand.type = 'button';
   let words = 300;
-  let contextLabel = 'Expand context';
+  let contextLabel = source.kind === 'songs' ? 'Show more lyrics' : 'Expand context';
   let contextComplete = false;
   expand.addEventListener('click', async () => {
     if (expanded.hidden && expanded.childNodes.length) {
@@ -200,7 +200,7 @@ function showSource(source, number, container) {
       const response = await fetch(`/api/context/${encodeURIComponent(source.id)}?words=${words}`);
       const data = await response.json();
       if (!response.ok) throw Error(data.detail || 'Context unavailable');
-      expanded.replaceChildren(makeNode('p', 'Surrounding text from this book. Expanded context is for reading; it does not change the generated answer.', 'muted'));
+      expanded.replaceChildren(makeNode('p', source.kind === 'songs' ? 'More lyrics from this song. Expanded lyrics are for reading; they do not change the generated answer.' : 'Surrounding text from this book. Expanded context is for reading; it does not change the generated answer.', 'muted'));
       expanded.hidden = false;
       collapse.hidden = false;
       for (const section of data.sections) {
