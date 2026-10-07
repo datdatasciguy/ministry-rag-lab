@@ -132,9 +132,7 @@ Generation requests use temperature 0. The output token cap is `max(1024, 4 * ta
 allowing space for JSON and citations. Length presets request 100, 250 or 600 words;
 the custom target supports 50–1,500. Word counts are approximate and the interface
 shows the actual count; source support takes priority over padding an answer.
-For long targets, an overly brief first draft can receive one expansion pass with
-the same evidence. Citations and quotations are validated again; a failed expansion
-leaves the valid first answer available. This is bounded prompting, not a training step.
+Short supported drafts are accepted without a length-expansion pass. Detail targets request substantive distinctions rather than repeated summaries.
 The context setting starts at 8,192 tokens for up to eight passages and targets
 up to 600 words, or 32,768 for larger requests, then is capped by the selected
 model profile. Small profiles use 4,096 or 8,192; larger profiles allow 16,384
@@ -216,3 +214,5 @@ diagnostics and local inference without publishing the private corpus.”
 ## Automatic answer recovery
 
 Answer validation failures trigger bounded recovery: first a corrected draft, then alternate lexical or hybrid retrieval within the same collection, author, book and source-count filters. Advanced settings allow 1-5 total generation attempts, defaulting to three. Citation numbering is rebuilt when passages change. A valid abstention is accepted immediately; retries do not manufacture evidence. If all attempts fail, sources remain readable and an unverified draft is shown only when separate extrapolation is enabled, with citation markers removed. Model connection failures are reported directly. Extra attempts add latency; they do not establish semantic correctness.
+
+Answers group equivalent source teachings into one explanation with multiple citations. Distinct contexts and qualifications stay separate. A conservative sentence-similarity check sends substantially repeated or closely paraphrased sentences through the same bounded recovery. This check does not establish semantic equivalence. Short supported answers are accepted without an automatic length-expansion pass; word targets do not justify padding.

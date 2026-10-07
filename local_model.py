@@ -1,5 +1,6 @@
 import json
 import re
+from difflib import SequenceMatcher
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 from model_options import model_profile
@@ -41,6 +42,29 @@ class UnsupportedAnswer(ValueError):
     def __init__(self, draft):
         super().__init__("Model acknowledged missing direct evidence but still gave a cited answer. Enable separate extrapolation to inspect the unverified draft, or try more specific wording or more sources.")
         self.draft = draft
+
+def repeats_content(text):
+    # Catch substantial repeated sentences, not recurring theological terms.
+    text = re.sub(r"\[\s*\d+(?:\s*,\s*\d+)*\s*\]", "", text)
+    sentences = [re.findall(r"\w+", part.casefold())
+                 for part in re.split(r"(?<=[.!?])\s+|\n+", text)]
+    total = sum(len(words) for words in sentences)
+    previous = []
+    repeated_words = 0
+    repeated_sentences = 0
+    for words in sentences:
+        if len(words) < 12:
+            continue
+        for earlier in previous:
+            if min(len(words), len(earlier)) / max(len(words), len(earlier)) < 0.7:
+                continue
+            if SequenceMatcher(None, earlier, words, autojunk=False).ratio() >= 0.8:
+                repeated_words += len(words)
+                repeated_sentences += 1
+                break
+        previous.append(words)
+    return (repeated_sentences >= 2 and repeated_words >= total * 0.2 or
+            repeated_words >= 25 and repeated_words >= total * 0.35)
 
 def validate_answer(answer, sources, allow_extrapolation=False, question=""):
     if not isinstance(answer, dict):
@@ -87,6 +111,8 @@ def validate_answer(answer, sources, allow_extrapolation=False, question=""):
         raise UnsupportedAnswer(answer)
     if not answer["answer"].strip() or (not answer["abstain"] and not citations):
         raise ValueError("Model answer has no supporting citations")
+    if repeats_content(answer["answer"]) or repeats_content(extrapolation):
+        raise ValueError("Model repeated the same point. Combine equivalent source teachings into one explanation with grouped citations; preserve distinct details and return less rather than repeating")
     answer["citations"] = list(dict.fromkeys(citations))
     answer["extrapolation"] = extrapolation.strip()
     answer["support_level"] = "none" if answer["abstain"] else support_level
@@ -157,6 +183,15 @@ def generate(question, hits, model, length="medium", words=250, allow_extrapolat
               "A citation to a related topic cannot justify an invented definition. "
               "Citations must be the bracketed passage numbers, not page or chapter numbers. "
               "For broad topics, synthesize the main ideas from several relevant passages. "
+              "Organize by distinct ideas, not by source number. When several passages teach "
+              "the same point, explain it once and group the relevant citations, such as [1, 14]. "
+              "Do not give a separate summary of each passage or repeat a conclusion with "
+              "slightly different wording. Discuss a source separately only when it contributes "
+              "a substantive distinction, condition or different context. Do not merge conflicting "
+              "teachings or force unrelated passages into the answer. "
+              "Use topic statements followed by their citations, rather than a sequence of "
+              "source introductions such as In [1] he says and In [2] he says. Do not repeat "
+              "the opening point as a closing sentence or restate it after each quotation. "
               "Do not imply this is exhaustive coverage or infer authorship from a book title. "
               "Use supplied author metadata; unverified authors must remain unverified. "
               "The ministry means the entire supplied corpus. Distinguish Bible text from footnote commentary. "
@@ -249,21 +284,6 @@ def generate(question, hits, model, length="medium", words=250, allow_extrapolat
         answer["recovery_notice"] = f"Stopped after {max_attempts} attempts; no verified answer was accepted."
     if failures and "recovery_notice" not in answer:
         answer["recovery_notice"] = f"Automatically recovered after {attempt} attempts."
-    if attempt < max_attempts and not failures and target >= 400 and not answer["abstain"] and len(answer["answer"].split()) < target * 0.7:
-        expanded_prompt = (prompt + f"\n\nThis draft is too brief for the requested {target} words. "
-                           "Develop its supported points into several substantive sections, "
-                           "explaining distinctions using the same supplied passages and terminology. "
-                           "Keep short exact quotations and citations. Add no unsupported material. "
-                           "Keep speculation only in extrapolation if permitted; otherwise keep it empty. "
-                           "Return the complete expanded answer as JSON.\nDraft:\n" + answer["answer"])
-        try:
-            attempt += 1
-            expanded = request("/api/generate", {**payload, "prompt": expanded_prompt})
-            candidate = validate_answer(json.loads(expanded["response"]), sources, allow_extrapolation, question)
-            if not candidate["abstain"] and len(candidate["answer"].split()) > len(answer["answer"].split()):
-                answer = candidate
-        except (ValueError, RuntimeError):
-            pass  # Keep the valid first answer if expansion fails
     return {**answer, "attempts": attempt, "retrieval_retried": retrieval_retried,
             "model": model, "model_digest": generation_digest, "context_tokens": context_tokens,
             "target_words": target, "answer_words": len(answer["answer"].split()), "output_tokens": output_tokens, "sources": hits}
