@@ -312,12 +312,13 @@ async function submitQuery(event) {
   event.preventDefault();
   const answer = event.submitter?.dataset.answer === 'true';
   element('status').className = '';
-  element('status').textContent = answer ? 'Finding passages and writing a local answer…' : 'Finding passages…';
+  element('status').textContent = answer ? `Finding passages and writing a local answer · up to ${element('answer-attempts').value} attempts…` : 'Finding passages…';
   element('answer').replaceChildren();
   element('results').replaceChildren();
   const controls = [...element('search').querySelectorAll('button, select, textarea, input')];
   const disabled = controls.map(control => control.disabled);
   const payload = {question: element('question').value, book: element('book').value, author: element('author').value, collection: element('collection').value, mode: element('mode').value, limit: Number(element('limit').value), answer_sources: Number(element('answer-sources').value), answer_length: element('answer-length').value, answer_words: Number(element('answer-words').value), model: element('model').value, allow_extrapolation: element('allow-extrapolation').checked, answer};
+  payload.max_answer_attempts = Number(element('answer-attempts').value);
   controls.forEach(control => control.disabled = true);
   try {
     const response = await fetch('/api/query', {
@@ -343,6 +344,7 @@ async function submitQuery(event) {
       }
       if (data.answer_sources) panel.append(makeNode('p', `The model received ${data.answer_sources} passages · ${data.context_tokens.toLocaleString()} token context setting.`, 'muted'));
       if (data.model) panel.append(makeNode('p', 'Answer model: ' + data.model, 'muted'));
+      if (data.recovery_notice) panel.append(makeNode('p', data.recovery_notice + (data.retrieval_retried ? ' Search was retried within your selected filters.' : ''), 'muted'));
       if (data.target_words) panel.append(makeNode('p', `${data.answer_words} words · requested about ${data.target_words}.`, 'muted'));
       element('answer').append(panel);
       if (data.extrapolation) {

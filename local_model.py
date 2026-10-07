@@ -43,6 +43,8 @@ class UnsupportedAnswer(ValueError):
         self.draft = draft
 
 def validate_answer(answer, sources, allow_extrapolation=False, question=""):
+    if not isinstance(answer, dict):
+        raise ValueError("Model returned an invalid answer object")
     allowed = set(range(1, len(sources) + 1))
     citations = answer.get("citations", [])
     if not isinstance(answer.get("abstain"), bool) or not isinstance(answer.get("answer"), str):
@@ -98,7 +100,10 @@ def inspect_extrapolation(draft):
             "abstain": True, "support_level": "none", "citations": [], "extrapolation": "\n\n".join(part for part in parts if part),
             "extrapolation_warning": "Unverified model draft: it acknowledged missing direct evidence. Its citation markers were removed. Read this as speculation, not as a statement of the ministry."}
 
-def generate(question, hits, model, length="medium", words=250, allow_extrapolation=False):
+def generate(question, hits, model, length="medium", words=250, allow_extrapolation=False,
+             max_attempts=3, retry_search=None):
+    if type(max_attempts) is not int or not 1 <= max_attempts <= 5:
+        raise ValueError("Choose 1–5 answer attempts")
     if not hits:
         raise ValueError("No passages were supplied")
     if len(hits) > 40:
@@ -193,28 +198,58 @@ def generate(question, hits, model, length="medium", words=250, allow_extrapolat
     output_tokens = max(1024, target * 4 + 512)
     payload = {"model": model, "system": system, "prompt": prompt, "format": schema,
                "stream": False, "think": False, "options": {"temperature": 0, "num_ctx": context_tokens, "num_predict": output_tokens}}
-    result = request("/api/generate", payload)
-    try:
-        answer = validate_answer(json.loads(result["response"]), sources, allow_extrapolation, question)
-    except UnsupportedAnswer as error:
-        if not allow_extrapolation:
-            raise
-        answer = inspect_extrapolation(error.draft)
-        if error.draft.get("support_level") == "background":
-            repair_prompt = (prompt + "\n\nReorganize this draft into the required fields. Keep only "
-                             "the sourced broader teachings and their quotations/citations in answer. "
-                             "Move every application to the specific conduct, inferred conclusion "
-                             "or statement labeled extrapolation into extrapolation, with no citation "
-                             "markers or attribution to the ministry. Do not add claims or evidence. "
-                             "Return the complete corrected JSON.\nDraft:\n" + json.dumps(error.draft))
-            try:
-                repaired = request("/api/generate", {**payload, "prompt": repair_prompt})
-                answer = validate_answer(json.loads(repaired["response"]), sources, True, question)
-            except (ValueError, RuntimeError):
-                pass  # The rejected draft stays inspectable if separation still fails
-    except json.JSONDecodeError as error:
-        raise ValueError("The local model did not finish a valid answer. Try fewer sources or a shorter answer.") from error
-    if target >= 400 and not answer["abstain"] and len(answer["answer"].split()) < target * 0.7:
+    draft = None
+    failures = []
+    retrieval_retried = False
+    for attempt in range(1, max_attempts + 1):
+        # Repair formatting first, then try different retrieval without widening filters.
+        if attempt == 3 and retry_search:
+            refreshed = retry_search()
+            if refreshed:
+                if len(refreshed) > min(40, budget["sources"]):
+                    raise ValueError("Retry retrieval exceeded the model's source budget")
+                hits = refreshed
+                sources = [{"citation": number, "title": hit["title"], "heading": hit["heading"],
+                            "author": hit.get("author", "Unverified"), "kind": hit.get("kind", "ministry"),
+                            "text": re.sub(r"\[\d+\]", "", hit["text"])}
+                           for number, hit in enumerate(hits, 1)]
+                prompt = "Question: " + question + "\n\nPassages:\n" + "\n\n".join(
+                    f'[{row["citation"]}] {row["title"]} / {row["heading"]} / Author: {row["author"]} / Kind: {row["kind"]}\n{row["text"]}' for row in sources)
+                schema["properties"]["citations"]["maxItems"] = len(hits)
+                schema["properties"]["citations"]["items"]["enum"] = list(range(1, len(hits) + 1))
+                retrieval_retried = True
+                draft = None  # Old citation numbers no longer refer to these passages.
+        retry_prompt = prompt
+        if failures:
+            retry_prompt += ("\n\nThe previous attempt failed validation: " + failures[-1] +
+                             ". Return complete valid JSON. Answer must contain only supported "
+                             "claims and verified quotations. Keep citations only in the supported "
+                             "answer, never in extrapolation. Move inferred applications to the "
+                             "separate extrapolation field only if permitted. Otherwise omit them. "
+                             "If support is insufficient, abstain with no citations. Never invent "
+                             "evidence to pass validation.")
+            if draft is not None:
+                retry_prompt += "\nPrevious draft (not evidence):\n" + json.dumps(draft)
+        result = request("/api/generate", {**payload, "prompt": retry_prompt})
+        try:
+            draft = json.loads(result["response"])
+            answer = validate_answer(draft, sources, allow_extrapolation, question)
+            break
+        except ValueError as error:
+            failures.append(str(error))
+    else:
+        answer = {"answer": "I couldn't produce an answer that passed the source checks after "
+                  f"{max_attempts} attempts. The retrieved passages are still available below.",
+                  "abstain": True, "support_level": "none", "citations": [], "extrapolation": ""}
+        if allow_extrapolation and isinstance(draft, dict) and isinstance(draft.get("answer"), str):
+            if isinstance(draft.get("extrapolation", ""), str):
+                answer["extrapolation"] = inspect_extrapolation(draft)["extrapolation"]
+                answer["extrapolation_warning"] = ("Unverified draft: the model did not pass the "
+                    "source checks. Citation markers were removed. This is speculation, not a statement of the ministry.")
+        answer["recovery_notice"] = f"Stopped after {max_attempts} attempts; no verified answer was accepted."
+    if failures and "recovery_notice" not in answer:
+        answer["recovery_notice"] = f"Automatically recovered after {attempt} attempts."
+    if attempt < max_attempts and not failures and target >= 400 and not answer["abstain"] and len(answer["answer"].split()) < target * 0.7:
         expanded_prompt = (prompt + f"\n\nThis draft is too brief for the requested {target} words. "
                            "Develop its supported points into several substantive sections, "
                            "explaining distinctions using the same supplied passages and terminology. "
@@ -222,11 +257,13 @@ def generate(question, hits, model, length="medium", words=250, allow_extrapolat
                            "Keep speculation only in extrapolation if permitted; otherwise keep it empty. "
                            "Return the complete expanded answer as JSON.\nDraft:\n" + answer["answer"])
         try:
+            attempt += 1
             expanded = request("/api/generate", {**payload, "prompt": expanded_prompt})
             candidate = validate_answer(json.loads(expanded["response"]), sources, allow_extrapolation, question)
             if not candidate["abstain"] and len(candidate["answer"].split()) > len(answer["answer"].split()):
                 answer = candidate
         except (ValueError, RuntimeError):
             pass  # Keep the valid first answer if expansion fails
-    return {**answer, "model": model, "model_digest": generation_digest, "context_tokens": context_tokens,
+    return {**answer, "attempts": attempt, "retrieval_retried": retrieval_retried,
+            "model": model, "model_digest": generation_digest, "context_tokens": context_tokens,
             "target_words": target, "answer_words": len(answer["answer"].split()), "output_tokens": output_tokens, "sources": hits}

@@ -47,6 +47,8 @@ details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{curs
 <p id="model-help" class="muted"></p>
 <label id="custom-length" hidden>Word target <input id="answer-words" type="number" min="50" max="1500" value="250" required style="width:75px;padding:8px;font:inherit"></label>
 <p class="muted">Length targets are approximate. Answers stay grounded in the selected sources and may be shorter when there is less to explain.</p>
+<label>Answer attempts <input id="answer-attempts" type="number" min="1" max="5" value="3" required style="width:65px;padding:8px;font:inherit"></label>
+<p class="muted">Automatically repairs rejected drafts, then retries search within your filters. Stops after this many attempts. Extra attempts take longer and cannot guarantee supporting evidence.</p>
 <p class="muted">Yellow highlights show query word matches. Expanded context marks the retrieved passage in green. Meaning ranks compare whole passages.</p>
 </div></details>
 <div><button type="submit" data-answer="false">Find passages</button><button type="submit" data-answer="true">Answer from passages</button></div>

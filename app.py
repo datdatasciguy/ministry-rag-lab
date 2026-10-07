@@ -28,6 +28,7 @@ class Query(BaseModel):
     answer_words: int = Field(default=250, ge=50, le=1500)
     model: str = Field(default="", max_length=120)
     allow_extrapolation: bool = False
+    max_answer_attempts: int = Field(default=3, ge=1, le=5)
 
 def create_app(index_path, model, desktop=False):
     index = SearchIndex(index_path)
@@ -67,7 +68,16 @@ def create_app(index_path, model, desktop=False):
             related = related_topics(body.question)
             if body.answer and hits:
                 selected_model = body.model or model
-                return {**generate(body.question, hits, selected_model, body.answer_length, body.answer_words, body.allow_extrapolation), "scope": scope, "collection": body.collection, "answer_sources": len(hits), "source_counts": counts, "related_topics": related}
+                retry_mode = "lexical" if body.mode == "hybrid" else (
+                    "hybrid" if index.manifest["embedding_model"] else "lexical")
+                retry_search = lambda: index.search(body.question, retry_mode, body.answer_sources,
+                                                   body.book, body.author, body.collection)
+                result = generate(body.question, hits, selected_model, body.answer_length,
+                                  body.answer_words, body.allow_extrapolation,
+                                  body.max_answer_attempts, retry_search)
+                counts = dict(Counter(hit["kind"] for hit in result["sources"]))
+                return {**result, "scope": scope, "collection": body.collection,
+                        "answer_sources": len(result["sources"]), "source_counts": counts, "related_topics": related}
             return {"sources": hits, "answer": "No matching passages found in this scope." if not hits else "", "citations": [], "abstain": not hits, "scope": scope, "collection": body.collection, "source_counts": counts, "related_topics": related}
         except (ValueError, RuntimeError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error

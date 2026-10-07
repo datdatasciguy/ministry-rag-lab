@@ -212,3 +212,7 @@ configuration. Books, indexes, query logs, and model weights stay outside GitHub
 author filtering, reference-aware Bible/footnote search, resumable corpus indexing,
 and source-cited generation using pretrained models. Implemented retrieval
 diagnostics and local inference without publishing the private corpus.”
+
+## Automatic answer recovery
+
+Answer validation failures trigger bounded recovery: first a corrected draft, then alternate lexical or hybrid retrieval within the same collection, author, book and source-count filters. Advanced settings allow 1-5 total generation attempts, defaulting to three. Citation numbering is rebuilt when passages change. A valid abstention is accepted immediately; retries do not manufacture evidence. If all attempts fail, sources remain readable and an unverified draft is shown only when separate extrapolation is enabled, with citation markers removed. Model connection failures are reported directly. Extra attempts add latency; they do not establish semantic correctness.
