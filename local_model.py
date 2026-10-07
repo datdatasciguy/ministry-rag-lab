@@ -95,7 +95,7 @@ def prepare_evidence(hits):
         texts.add(text)
         unique.append(hit)
     if len(unique) < len(hits):
-        warnings.append("Duplicate passages from the same source were removed before generation; repetition is not additional evidence.")
+        warnings.append("Duplicate passages removed.")
     if overlap:
         warnings.append("Some sources repeat the same text. Repetition across books does not by itself establish consensus or importance.")
     if len(unique) <= 2:

@@ -337,6 +337,7 @@ async function submitQuery(event) {
   payload.allow_unverified_response = element('allow-unverified').checked;
   payload.expand_related_topics = element('expand-related').checked;
   payload.answer_original = element('answer-original').checked;
+  payload.skip_wording_guidance = element('skip-wording-guidance').checked;
   controls.forEach(control => control.disabled = true);
   try {
     const response = await fetch('/api/query', {
@@ -427,7 +428,7 @@ async function submitQuery(event) {
 }
 
 element('search').addEventListener('submit', submitQuery);
-for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation', 'allow-unverified', 'expand-related', 'answer-original']) {
+for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation', 'allow-unverified', 'expand-related', 'answer-original', 'skip-wording-guidance']) {
   element(id).addEventListener('change', () => {
     element('answer').replaceChildren();
     element('results').replaceChildren();

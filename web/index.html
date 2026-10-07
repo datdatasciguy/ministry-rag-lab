@@ -36,11 +36,13 @@ details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{curs
 <div class="advanced-controls">
 <label><input id="allow-extrapolation" type="checkbox"> Allow a separate, clearly labeled extrapolation</label>
 <p class="muted">Off by default. Related themes do not prove an answer. Any speculative reflection is shown separately and is not attributed to the ministry.</p>
-<label><input id="allow-unverified" type="checkbox"> Show an unverified model draft if source checks fail</label>
+<label><input id="allow-unverified" type="checkbox"> Show a response even if source checks fail</label>
 <p class="muted">Off by default. After the attempt limit, you can inspect the rejected response with a warning and no citation links. It may contain unsupported claims or invented quotations. Source filters and checks still apply.</p>
 <label><input id="expand-related" type="checkbox" checked> Search related concepts if the first passages do not address the question</label>
-<label><input id="answer-original" type="checkbox"> Exactly as asked · keep the original question wording</label>
 <p class="muted">One extra local keyword-generation step suggests up to three search phrases. Author, book and collection filters stay in place; answer attempts remain bounded. Related themes are background, not a direct position on your question.</p>
+<label><input id="answer-original" type="checkbox"> Exactly as asked · keep the original question wording</label>
+<label><input id="skip-wording-guidance" type="checkbox"> Skip inappropriate-wording guidance · ask the local model directly</label>
+<p class="muted">Off by default. Sends your original question without the app’s wording rewrite or refusal. The model can still decline a request. This also applies to Deep research; its evidence checks remain active.</p>
 <label class="book-control">Book <select id="book"><option value="">All books</option></select></label>
 <label>Author <select id="author"><option value="auto">From your question</option><option value="all">Whole ministry / all authors</option><option>Witness Lee</option><option>Watchman Nee</option></select></label>
 
@@ -72,6 +74,8 @@ details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{curs
 <label>Saved job <select id="research-jobs"><option value="">No saved jobs</option></select></label>
 <div><button id="research-pause" type="button" disabled>Pause</button><button id="research-resume" type="button" disabled>Resume</button><button id="research-summary" type="button" disabled>Summarize findings so far</button></div>
 <p id="research-status" role="status">No job selected.</p>
+<p id="research-eta" class="muted"></p>
+<p id="research-summary-help" class="muted"></p>
 <progress id="research-progress" value="0" max="1"></progress>
 <div id="research-report"></div>
 <div id="research-findings"></div><button id="research-more" type="button" hidden>Show collected excerpts</button>

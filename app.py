@@ -35,6 +35,7 @@ class Query(BaseModel):
     allow_unverified_response: bool = False
     expand_related_topics: bool = True
     answer_original: bool = False
+    skip_wording_guidance: bool = False
 
 class ResearchStart(Query):
     batch_words: int = Field(default=600, ge=100, le=1200)
@@ -84,8 +85,9 @@ def create_app(index_path, model, desktop=False):
         try:
             question, original = original_wording(body.question, body.answer_original)
             body = body.model_copy(update={"question": question, "answer_original": original})
-            guidance = respectful_question(body.question, body.answer_original)
-            interpretation = {}
+            guidance = None if body.skip_wording_guidance else respectful_question(body.question, body.answer_original)
+            interpretation = ({"policy_notice": "Wording guidance skipped. Original question wording retained; evidence checks still apply."}
+                              if body.skip_wording_guidance else {})
             search_question = body.question
             if guidance and guidance.get('query_rewrite'):
                 interpretation = {key: guidance[key] for key in ['interpreted_question', 'policy_notice']}
@@ -173,7 +175,7 @@ def create_app(index_path, model, desktop=False):
 
     @app.post("/api/research")
     def start_research(body: ResearchStart):
-        if respectful_question(body.question, body.answer_original):
+        if not body.skip_wording_guidance and respectful_question(body.question, body.answer_original):
             raise HTTPException(status_code=400, detail="Use Answer from passages to clarify this question's wording before starting a corpus scan.")
         if official_introduction(body.question):
             raise HTTPException(status_code=400, detail="Use Answer from passages for the official introduction links to this question; a corpus scan is not needed.")

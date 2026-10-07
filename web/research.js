@@ -78,6 +78,24 @@ async function refreshResearch() {
     const seconds = job.active_seconds;
     const pace = job.batches ? Math.round(seconds / job.batches) : null;
     element('research-status').textContent = `${job.status} · ${job.phase} · ${job.sections_examined.toLocaleString()} / ${job.total_sections.toLocaleString()} sections examined (${job.coverage_percent}%) · ${job.partial_sections} partial · ${job.batches} source batches · ${job.summary_batches} summary batches · ${job.finding_count} excerpts · ${job.failures} failed runs. Scope: ${job.collection}, ${job.author}${job.book ? ', book: ' + job.book : ''}. ${pace === null ? '' : 'Recorded average: ' + pace + ' seconds per source batch, including report work.'} ${job.last_error}`;
+    let eta = job.eta;
+    // Older running servers can still show a rough section-based scan estimate.
+    if (!eta) {
+      const progress = job.sections_examined + job.partial_sections * 0.5;
+      eta = job.status === 'complete' ? {seconds: 0, note: 'Complete.'} : job.phase === 'scan' && progress >= 3
+        ? {seconds: seconds * (job.total_sections - progress) / progress, note: 'Rough scan estimate; final report time is additional and section lengths vary.'}
+        : {seconds: null, note: 'Estimating after more progress.'};
+    }
+    const remaining = eta.seconds === null ? '' : eta.seconds === 0 ? '' :
+      eta.seconds < 60 ? 'Less than a minute. ' : eta.seconds < 3600 ? `About ${Math.ceil(eta.seconds / 60)} minutes. ` :
+      eta.seconds < 86400 ? `About ${(eta.seconds / 3600).toFixed(1)} hours. ` : `About ${(eta.seconds / 86400).toFixed(1)} days. `;
+    element('research-eta').textContent = `Estimated time remaining${eta.target ? " (" + eta.target + ")" : ""}: ${remaining}${eta.note}`;
+    element('research-summary-help').textContent = job.status === 'pausing'
+      ? 'Pause requested. Waiting for the current model call to finish and save; summarizing will then be available.'
+      : ['running', 'pausing'].includes(job.status)
+        ? job.phase === 'report' ? 'Building the summary. Its report appears here when ready.' : 'Pause the scan first, then summarize the saved excerpts.'
+        : !job.finding_count ? 'Summarizing needs at least one relevant excerpt. Resume the scan to collect evidence.'
+        : 'Summarize findings so far is available. It uses saved excerpts; the full scan does not need to finish.';
     const active = ['running', 'pausing'].includes(job.status);
     element('research-pause').disabled = !active || job.status === 'pausing';
     element('research-resume').disabled = active || job.status === 'complete';
@@ -120,7 +138,8 @@ element('research-start').addEventListener('click', async () => {
     if (!question) throw Error('Enter your research question above.');
     const job = await researchRequest('', {...researchSettings(), question, model: element('model').value,
       book: element('book').value, author: element('author').value, collection: element('collection').value,
-      batch_words: Number(element('research-words').value)});
+      batch_words: Number(element('research-words').value),
+      answer_original: element('answer-original').checked, skip_wording_guidance: element('skip-wording-guidance').checked});
     await loadResearchJobs(job.id);
   } catch (error) {
     element('research-status').textContent = error.message;

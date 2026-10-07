@@ -72,8 +72,9 @@ class ResearchJobs:
             if not source.execute("SELECT name FROM sqlite_master WHERE name='source_sections'").fetchone():
                 raise ValueError("Rebuild the index to retain complete source sections before Deep research")
             marks = ",".join("?" for _ in titles)
-            sections = source.execute("SELECT id FROM source_sections WHERE title IN (" + marks +
-                                      ") ORDER BY title, position, id", titles).fetchall()
+            sections = [(row[0], max(1, (len(row[1].split()) + batch_words - 1) // batch_words))
+                        for row in source.execute("SELECT id,text FROM source_sections WHERE title IN (" + marks +
+                                                  ") ORDER BY title, position, id", titles)]
         if not sections:
             raise ValueError("No source sections match this research scope")
         job_id = str(uuid4())
@@ -90,6 +91,8 @@ class ResearchJobs:
                     "book": book, "author": scope, "collection": collection, "fingerprint": self.fingerprint(),
                     "batch_words": batch_words, "total_sections": len(sections), "status": "paused",
                     "phase": "scan", "batches": 0, "words_examined": 0, "failures": 0,
+                    "total_scan_batches": sum(row[1] for row in sections),
+                    "scan_seconds": 0, "timed_scan_batches": 0, "summary_seconds": 0, "timed_summary_batches": 0,
                     "active_seconds": 0, "created_at": now(), "updated_at": now(), "last_error": "",
                     "summary_batches": 0, "report_snapshot": 0, "report_root": None}
             db.execute("INSERT INTO metadata VALUES (?)", (json.dumps(meta),))
@@ -113,7 +116,47 @@ class ResearchJobs:
             elapsed = time.monotonic() - self.started if self.started is not None and self.active == job_id and self.worker and self.worker.is_alive() else 0
             return {**meta, "active_seconds": round(meta["active_seconds"] + elapsed, 2),
                     "sections_examined": done, "partial_sections": partial, "finding_count": count,
-                    "coverage_percent": round(100 * done / meta["total_sections"], 2), "report": report}
+                    "coverage_percent": round(100 * done / meta["total_sections"], 2), "report": report,
+                    "eta": self.estimate(db, meta, done, partial, count, elapsed)}
+
+    def estimate(self, db, meta, done, partial, findings, elapsed=0):
+        if meta['status'] == 'complete':
+            return {"seconds": 0, "note": "Complete."}
+        if meta['batches'] < 3:
+            return {"seconds": None, "note": "Estimating after a few completed batches."}
+        active = meta['active_seconds'] + elapsed
+        fallback = active / max(1, meta['batches'] + meta['summary_batches'])
+        scan_pace = meta.get('scan_seconds', 0) / max(1, meta.get('timed_scan_batches', 0)) or fallback
+        summary_pace = meta.get('summary_seconds', 0) / max(1, meta.get('timed_summary_batches', 0)) or fallback
+        total = meta.get('total_scan_batches')
+        if total is None:
+            progress = done + partial * 0.5
+            if progress < 3:
+                return {"seconds": None, "note": "Estimating after a few sections; section lengths vary."}
+            total = meta['batches'] * meta['total_sections'] / progress
+        remaining = max(0, total - meta['batches'])
+        projected_findings = findings * (1 + remaining / max(1, meta['batches']))
+        reporting = meta['phase'] == 'report' and meta.get('report_root') is None
+        if reporting:
+            remaining = 0
+            projected_findings = db.execute("SELECT COUNT(*) FROM findings WHERE id<=?", (meta['report_snapshot'],)).fetchone()[0]
+        size = min(8, model_profile(meta['model'])['sources'])
+        summary_calls = 0
+        items = int(projected_findings + 0.999)
+        while items:
+            items = (items + size - 1) // size
+            summary_calls += items
+            if items == 1:
+                break
+        if reporting:
+            summary_calls = max(0, summary_calls - db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0])
+        note = "Rough estimate from measured speed; future excerpts, retries and PC load can change it."
+        if not meta.get('timed_summary_batches'):
+            note += " Final-summary speed has not been measured yet."
+        if meta['status'] == 'paused':
+            note += " Active time after resuming; paused time is excluded."
+        return {"seconds": round(remaining * scan_pace + summary_calls * summary_pace), "note": note,
+                "target": "current report" if reporting else "full research run"}
 
     def jobs(self):
         jobs = [self.status(path.stem) for path in self.root().glob("*.sqlite")]
@@ -225,6 +268,7 @@ class ResearchJobs:
         raise ValueError(error.strip())
 
     def scan_batch(self, db, meta):
+        started = time.monotonic()
         pending = db.execute("SELECT * FROM sections WHERE done=0 ORDER BY position LIMIT 1").fetchone()
         if pending is None:
             with db:
@@ -250,6 +294,8 @@ class ResearchJobs:
             db.execute("UPDATE sections SET offset=?, done=? WHERE position=?", (end, int(end == len(words)), pending["position"]))
             meta["batches"] += 1
             meta["words_examined"] += end - start
+            meta["scan_seconds"] = meta.get("scan_seconds", 0) + time.monotonic() - started
+            meta["timed_scan_batches"] = meta.get("timed_scan_batches", 0) + 1
             self.write(db, meta)
         return True
 
@@ -320,6 +366,7 @@ class ResearchJobs:
                             "text": item["quote"] if level == 0 else re.sub(r"\[\d+(?:\s*,\s*\d+)*\]", "", json.loads(item["data"])["answer"]),
                             "author": item["author"] if level == 0 else "Unverified", "kind": item["kind"] if level == 0 else "summary"}
                            for i, item in enumerate(items, 1)]
+        started = time.monotonic()
         answer = self.synthesize(meta["question"], sources, meta["model"],
                                          min(600 if final else 180, model_profile(meta["model"])["words"]))
         node = {**answer, "sources": sources, "children": [item["id"] for item in items],
@@ -329,6 +376,8 @@ class ResearchJobs:
             meta["report_cursor"] = items[-1]["id"]
             meta["report_group"] += 1
             meta["summary_batches"] += 1
+            meta["summary_seconds"] = meta.get("summary_seconds", 0) + time.monotonic() - started
+            meta["timed_summary_batches"] = meta.get("timed_summary_batches", 0) + 1
             if final:
                 meta["report_root"] = cursor.lastrowid
             self.write(db, meta)

@@ -28,3 +28,9 @@ Reports should say what the examined sources support, distinguish background fro
 ## Private files
 
 Jobs live in a `research` folder beside your index, each in its own SQLite file. These files contain private excerpts and summaries. Keep them local along with your books and index. The code-only package uses a fixed allowlist and excludes these files.
+
+## Time estimates and interim reports
+
+Estimated time remaining uses measured batch speed, remaining scan windows and the expected summary hierarchy. New jobs count scan windows from section word lengths; older jobs extrapolate from completed and partially read sections. Until enough batches finish, the page says it is still estimating. Before summary calls have been timed, their duration uses the observed batch average. Estimates include projected final-report work but can change substantially with section lengths, evidence yield, retries and PC load. Paused jobs show estimated active time after resuming.
+
+An interim report is available once the job is fully paused and at least one relevant excerpt is saved. Pause waits for the current model call to finish and save. The page explains that waiting state beside the controls. Resume afterward to keep scanning.
