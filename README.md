@@ -211,3 +211,19 @@ See [friend setup](docs/sharing.md) for the complete installation and collection
 requirements. Your localhost address is only accessible on your own computer.
 
 Optimized research searches reusable section summaries, filters candidates by relevance and follows up on gaps. Full scan remains available when you want every scoped section examined. Both save checkpoints and link reports to original excerpts. See [Deep research](docs/deep_research.md) for the controls and coverage limits.
+
+Advanced offers optional source diversity for answers. It retrieves a larger ranked
+pool, uses existing embedding similarity to find close pairs, then asks the local
+model whether a passage adds a meaningful point before replacing it. Lower the
+comparison threshold to consider more pairs, or raise the comparison budget.
+These comparisons cost extra time; uncertain pairs stay. Bible verses, footnotes
+and ministry passages remain separate kinds, and collection/author filters still
+apply. Decisions are cached locally, not included in code packages. This is a
+conservative redundancy check, not a guarantee of complete conceptual coverage.
+
+Answer check details show actual rejection reasons, including repaired attempts.
+Quotation failures ask the next attempt to paraphrase with citations. An
+exhausted repair budget is labeled as a check failure rather than proof that
+the collection lacks an answer. Topic planning preserves the original search
+question, and directly supported answers use natural ministry terminology with
+citations rather than repeated editorial attribution.

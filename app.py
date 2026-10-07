@@ -11,8 +11,9 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from local_model import generate, related_searches, plan_retrieval, request as model_request
-from model_options import PROFILES, read_settings
+from model_options import PROFILES, read_settings, model_profile
 from search import SearchIndex, related_topics
+from source_diversity import SourceDiversity
 from catalog import author_scope
 from research import ResearchJobs
 from official_sources import normalize_ministry_question
@@ -36,6 +37,9 @@ class Query(BaseModel):
     expand_related_topics: bool = True
     answer_original: bool = False
     skip_wording_guidance: bool = False
+    source_diversity: bool = False
+    diversity_threshold: float = Field(default=0.92, ge=0.85, le=0.99)
+    diversity_checks: int = Field(default=12, ge=1, le=30)
 
 class ResearchStart(Query):
     batch_words: int = Field(default=600, ge=100, le=1200)
@@ -53,6 +57,7 @@ class ResearchRun(BaseModel):
 def create_app(index_path, model, desktop=False):
     index = SearchIndex(index_path)
     research = ResearchJobs(index)
+    diversity = SourceDiversity(index)
     app = FastAPI(title="Ministry Search RAG", docs_url=None, redoc_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
     web = Path(__file__).parent / "web"
@@ -121,16 +126,27 @@ def create_app(index_path, model, desktop=False):
                 except (ValueError, RuntimeError, KeyError):
                     planning_warning = 'Search planning could not complete; used the original question.'
             search_author = scope if body.author == 'auto' else body.author
-            hits = index.search(search_question, body.mode, body.answer_sources if body.answer else body.limit,
-                                body.book, search_author, body.collection, preferred_topics)
+            selection_reports = []
+            limit = min(body.answer_sources, model_profile(selected_model)['sources']) if body.answer and body.source_diversity else body.answer_sources if body.answer else body.limit
+            pool_limit = min(100, max(limit * 3, limit + 8)) if body.answer and body.source_diversity else limit
+            def select_sources(pool):
+                if not body.answer or not body.source_diversity:
+                    return pool
+                selected, report = diversity.select(pool, limit, body.question, selected_model,
+                    body.diversity_threshold, body.diversity_checks, body.collection == 'balanced')
+                selection_reports.append(report)
+                return selected
+            def retrieve(mode):
+                pool = index.search(search_question, mode, pool_limit, body.book, search_author, body.collection, preferred_topics)
+                return select_sources(pool)
+            hits = retrieve(body.mode)
             counts = dict(Counter(hit["kind"] for hit in hits))
             related = related_topics(body.question)
             if body.answer:
                 selected_model = body.model or model
                 retry_mode = "lexical" if body.mode == "hybrid" else (
                     "hybrid" if index.manifest["embedding_model"] else "lexical")
-                retry_search = lambda: index.search(search_question, retry_mode, body.answer_sources,
-                                                   body.book, search_author, body.collection, preferred_topics)
+                retry_search = lambda: retrieve(retry_mode)
                 if hits:
                     result = generate(body.question, hits, selected_model, body.answer_length,
                                       body.answer_words, body.allow_extrapolation,
@@ -143,19 +159,21 @@ def create_app(index_path, model, desktop=False):
                     try:
                         terms = related_searches(body.question, selected_model)
                         # Keep the author resolved from the original question during expansion.
-                        pools = [index.search(term, body.mode, body.answer_sources, body.book,
+                        pools = [index.search(term, body.mode, pool_limit, body.book,
                                               scope if body.author == "auto" else body.author, body.collection, preferred_topics)
                                  for term in terms]
                         expanded = []
                         seen = set()
-                        for rank in range(body.answer_sources):
+                        for rank in range(pool_limit):
                             for pool in pools:
                                 if rank < len(pool):
                                     hit = pool[rank]
                                     key = hit.get("section_id", hit["id"])
-                                    if key not in seen and len(expanded) < body.answer_sources:
+                                    if key not in seen and len(expanded) < pool_limit:
                                         seen.add(key)
                                         expanded.append(hit)
+                        if expanded:
+                            expanded = select_sources(expanded)
                         if expanded:
                             result = generate(body.question, expanded, selected_model, body.answer_length,
                                               body.answer_words, body.allow_extrapolation,
@@ -168,6 +186,8 @@ def create_app(index_path, model, desktop=False):
                             related = list(dict.fromkeys([*related, *terms]))
                     except (ValueError, RuntimeError) as error:
                         result.setdefault("evidence_warnings", []).append("Related-topic search could not complete. The first response and its sources are shown.")
+                if selection_reports:
+                    result["source_diversity"] = {**selection_reports[-1], "selected": len(result["sources"])}
                 if planning_warning:
                     result.setdefault("evidence_warnings", []).append(planning_warning)
                 counts = dict(Counter(hit["kind"] for hit in result["sources"]))

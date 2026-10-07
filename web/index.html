@@ -34,6 +34,10 @@ details{border-top:1px solid #d9dfd5;padding-top:14px;margin:18px 0}summary{curs
 <p id="preset-help" class="muted"></p>
 <details id="advanced"><summary>Advanced · filters, model and exact limits</summary>
 <div class="advanced-controls">
+<label><input id="source-diversity" type="checkbox"> Diversify answer sources · replace passages making almost the same point</label>
+<label>Similarity screening threshold <input id="diversity-threshold" type="number" min="0.85" max="0.99" step="0.01" value="0.92"></label>
+<label>Comparison limit <input id="diversity-checks" type="number" min="1" max="30" value="12"></label>
+<p class="muted">Off by default. Retrieves extra candidates, screens their existing embeddings, then asks the local model whether close matches add meaningful differences. Lower thresholds compare more pairs; they are not probabilities. Uncertain comparisons keep both passages. Extra comparisons take longer. Requires an index with embeddings.</p>
 <label><input id="allow-extrapolation" type="checkbox"> Allow a separate, clearly labeled extrapolation</label>
 <p class="muted">Off by default. Related themes do not prove an answer. Any speculative reflection is shown separately and is not attributed to the ministry.</p>
 <label><input id="allow-unverified" type="checkbox"> Show a response even if source checks fail</label>

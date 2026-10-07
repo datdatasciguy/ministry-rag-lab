@@ -338,6 +338,9 @@ async function submitQuery(event) {
   payload.expand_related_topics = element('expand-related').checked;
   payload.answer_original = element('answer-original').checked;
   payload.skip_wording_guidance = element('skip-wording-guidance').checked;
+  payload.source_diversity = element('source-diversity').checked;
+  payload.diversity_threshold = Number(element('diversity-threshold').value);
+  payload.diversity_checks = Number(element('diversity-checks').value);
   controls.forEach(control => control.disabled = true);
   try {
     const response = await fetch('/api/query', {
@@ -367,7 +370,7 @@ async function submitQuery(event) {
         panel.append(warning);
       }
       if (data.interpreted_question) panel.append(makeNode('p', 'I interpreted your question as: ' + data.interpreted_question, 'scope-warning'));
-      panel.append(makeNode('h3', data.question_refused ? 'Cannot answer as framed' : data.policy_intro ? 'Respectful wording' : data.abstain ? 'More evidence needed' : data.scope_warning ? 'Findings from the retrieved passages' : data.support_level === 'background' ? 'Related source teachings — broader principles' : 'Answer'));
+      panel.append(makeNode('h3', data.question_refused ? 'Cannot answer as framed' : data.policy_intro ? 'Respectful wording' : data.validation_failed ? 'Answer checks did not pass' : data.abstain ? 'More evidence needed' : data.scope_warning ? 'Findings from the retrieved passages' : data.support_level === 'background' ? 'Related source teachings — broader principles' : 'Answer'));
       if (data.support_level === 'background') panel.append(makeNode('p', 'These passages support related teachings. They do not directly establish an answer to your specific question; any application beyond them belongs in the separate extrapolation section.', 'muted'));
       panel.append(renderAnswer(data.answer, data.sources.length));
       if (data.policy_notice) panel.append(makeNode('p', data.policy_notice, 'muted'));
@@ -381,8 +384,22 @@ async function submitQuery(event) {
         panel.append(citations);
       }
       if (data.answer_sources) panel.append(makeNode('p', `The model received ${data.answer_sources} passages · ${data.context_tokens.toLocaleString()} token context setting.`, 'muted'));
+      if (data.source_diversity) {
+        const selection = data.source_diversity;
+        panel.append(makeNode('p', selection.available
+          ? `Source diversity: ${selection.selected} sources from ${selection.candidates} candidates · ${selection.skipped} redundant passages replaced · ${selection.checked_pairs} close comparisons${selection.limit_reached ? ' · comparison limit reached; remaining uncertain passages retained' : ''}${selection.failed_checks ? ' · a comparison failed; both passages retained' : ''}.`
+          : 'Source diversity needs an index with embeddings; ordinary ranking was used.', 'muted'));
+      }
       if (data.model) panel.append(makeNode('p', 'Answer model: ' + data.model, 'muted'));
       if (data.recovery_notice) panel.append(makeNode('p', data.recovery_notice + (data.retrieval_retried ? ' Search was retried within your selected filters.' : ''), 'muted'));
+      if (data.source_check_issues?.length) {
+        const checks = makeNode('details', '');
+        checks.append(makeNode('summary', 'Answer check details'));
+        const list = makeNode('ul', '');
+        data.source_check_issues.forEach(issue => list.append(makeNode('li', issue)));
+        checks.append(list);
+        panel.append(checks);
+      }
       if (data.target_words) panel.append(makeNode('p', `${data.answer_words} words · requested about ${data.target_words}.`, 'muted'));
       element('answer').append(panel);
       if (data.extrapolation) {
@@ -415,7 +432,7 @@ async function submitQuery(event) {
 }
 
 element('search').addEventListener('submit', submitQuery);
-for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation', 'allow-unverified', 'expand-related', 'answer-original', 'skip-wording-guidance']) {
+for (const id of ['preset', 'book', 'author', 'collection', 'mode', 'limit', 'answer-sources', 'answer-length', 'answer-words', 'model', 'allow-extrapolation', 'allow-unverified', 'expand-related', 'answer-original', 'skip-wording-guidance', 'source-diversity', 'diversity-threshold', 'diversity-checks']) {
   element(id).addEventListener('change', () => {
     element('answer').replaceChildren();
     element('results').replaceChildren();
