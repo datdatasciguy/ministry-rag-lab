@@ -1,5 +1,6 @@
 import argparse
 import html
+import ipaddress
 from collections import Counter
 from contextlib import closing
 from pathlib import Path
@@ -58,17 +59,38 @@ class ResearchRun(BaseModel):
     run_minutes: int = Field(default=10, ge=0, le=1440)
     max_batches: int = Field(default=0, ge=0, le=10000)
 
-def create_app(index_path, model, desktop=False):
+def lan_access(lan_address, lan_subnet):
+    if not lan_address and not lan_subnet:
+        return None
+    if not lan_address or not lan_subnet:
+        raise ValueError('Provide both --lan-address and --lan-subnet for home-network access.')
+    address = ipaddress.ip_address(lan_address)
+    subnet = ipaddress.ip_network(lan_subnet)
+    private = [ipaddress.ip_network(value) for value in ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']]
+    if (address.version != 4 or subnet.version != 4 or address not in subnet
+            or not any(subnet.subnet_of(network) for network in private)):
+        raise ValueError('Use this PC\'s private IPv4 address and its home-network subnet.')
+    return str(address), subnet
+
+def create_app(index_path, model, desktop=False, lan_address=None, lan_subnet=None):
+    lan = lan_access(lan_address, lan_subnet)
     index = SearchIndex(index_path)
     research = ResearchJobs(index)
     diversity = SourceDiversity(index)
     songs = SongMeaning(index)
     app = FastAPI(title="Ministry Search RAG", docs_url=None, redoc_url=None)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver", *([lan[0]] if lan else [])])
     web = Path(__file__).parent / "web"
 
     @app.middleware("http")
     async def check_origin(request: Request, call_next):
+        if lan:
+            try:
+                client = ipaddress.ip_address(request.client.host if request.client else '')
+            except ValueError:
+                return JSONResponse({'detail': 'Unrecognized device address.'}, status_code=403)
+            if not client.is_loopback and client not in lan[1]:
+                return JSONResponse({'detail': 'Use the home network to access the collection.'}, status_code=403)
         origin = request.headers.get("origin")
         expected = "http://" + request.headers.get("host", "")
         if request.method == "POST" and origin and origin != expected:
@@ -313,13 +335,21 @@ def main():
     parser.add_argument("--index")
     parser.add_argument("--model")
     parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--lan-address", help="This PC's private IPv4 address for home-network access.")
+    parser.add_argument("--lan-subnet", help="Allow this private home-network subnet, such as 192.168.1.0/24.")
     args = parser.parse_args()
     settings = read_settings()
     index = args.index or settings.get("index", "data/books.sqlite")
     model = args.model or settings.get("model", "qwen2.5:7b")
     if not Path(index).is_file():
         parser.error("Build your collection index first; see docs/sharing.md")
-    uvicorn.run(create_app(index, model), host="127.0.0.1", port=args.port, access_log=False)
+    try:
+        lan = lan_access(args.lan_address, args.lan_subnet)
+    except ValueError as error:
+        parser.error(str(error))
+    app = create_app(index, model, lan_address=args.lan_address, lan_subnet=args.lan_subnet)
+    uvicorn.run(app, host="0.0.0.0" if lan else "127.0.0.1", port=args.port,
+                access_log=False, proxy_headers=False)
 
 if __name__ == "__main__":
     main()

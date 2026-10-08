@@ -85,3 +85,31 @@ collections. The displayed verse is optional private metadata, not bundled text.
 Sharing the code grants no rights to distribute a book collection. A friend
 must obtain their permitted source files separately. Do not place books, private
 indexes or models in GitHub, public ZIPs, or publicly accessible hosting.
+
+
+## Use your phone on the same home network
+
+The PC runs the model; your phone only needs a browser. Keep the PC awake and
+connect the phone to the same home network as the PC (Ethernet also works).
+Find the PC's IPv4 address and subnet with `ipconfig`. For example, a PC at
+`192.168.1.66` with subnet mask `255.255.255.0` uses `192.168.1.0/24`:
+
+```powershell
+.\.venv\Scripts\python.exe app.py --index data/books-with-authors.sqlite --lan-address 192.168.1.66 --lan-subnet 192.168.1.0/24
+```
+
+Replace the example addresses and index path with yours. On the phone, open
+`http://192.168.1.66:8766/` in Safari or Chrome. The app allows localhost and
+devices in the selected subnet, rejects other client addresses and Host headers,
+and ignores forwarded client-address headers. Everyone on that subnet can use
+the app and read its indexed sources; there is no account login.
+
+Windows may need an inbound TCP 8766 firewall rule restricted to the selected
+subnet, the PC's LAN address and its home-network interface. No router port
+forwarding is needed. Guest Wi-Fi may isolate devices; use the main network.
+Stop LAN access by restarting without the two flags. Update the address if
+DHCP changes it. These flags apply to the command-line app; the installer stays
+on localhost by default.
+
+This is plain HTTP for a trusted home network. A subnet allowlist is not user
+authentication. Do not expose the collection to the internet.
