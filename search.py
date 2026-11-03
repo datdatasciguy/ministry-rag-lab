@@ -48,6 +48,15 @@ def formatted_excerpt(text, passage):
     spans = list(re.finditer(r"\S+", text))
     return text[spans[start].start():spans[end - 1].end()]
 
+def top_semantic_indices(similarity, eligible, limit):
+    scores = similarity[eligible]
+    if len(scores) <= limit:
+        return eligible[np.argsort(-scores, kind="stable")]
+    cutoff = np.partition(scores, len(scores) - limit)[len(scores) - limit]
+    candidates = np.flatnonzero(scores >= cutoff)
+    order = np.argsort(-scores[candidates], kind="stable")[:limit]
+    return eligible[candidates[order]]
+
 def build_index(sources, output, embedding_model=None, progress=None, resume=False):
     output = Path(output)
     if output.exists():
@@ -295,7 +304,7 @@ class SearchIndex:
                 query = np.asarray(embed([focused], model, query=True)[0], dtype=np.float32)
                 similarity = (self.matrix @ query) / max(np.linalg.norm(query), 1e-12)
                 eligible = np.array([i for i, row in enumerate(self.vector_rows) if row[1] in eligible_titles], dtype=int)
-                for rank, index in enumerate(eligible[np.argsort(-similarity[eligible], kind="stable")[:candidates]], 1):
+                for rank, index in enumerate(top_semantic_indices(similarity, eligible, candidates), 1):
                     scores[self.vector_rows[index][0]] += (3 if collection == 'songs' else 1) / (60 + rank)
                     ranks.setdefault(self.vector_rows[index][0], {})["meaning"] = rank
             hits = []
