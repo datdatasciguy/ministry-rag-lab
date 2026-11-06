@@ -32,11 +32,20 @@ def related_topics(question):
     return []
 
 def verse_reference(question):
+    matches = []
+    numbered = {"1": ("I", "First"), "2": ("II", "Second"), "3": ("III", "Third")}
     for code, name in BOOKS.items():
-        match = re.search(r"(?<!\w)(?:" + re.escape(name) + "|" + re.escape(code) + r")\.?\s+(\d+):(\d+)\b", question, re.I)
+        aliases = [name, code]
+        if name[:1] in numbered and name[1:2] == " ":
+            aliases.extend(prefix + name[1:] for prefix in numbered[name[0]])
+        pattern = r"(?<!\w)(?:" + "|".join(re.escape(alias) for alias in aliases) + r")\.?\s+(\d+):(\d+)\b"
+        match = re.search(pattern, question, re.I)
         if match:
-            return f"{name} {int(match[1])}:{int(match[2])}"
-    return ""
+            matches.append((match.start(), -len(match.group()), name, int(match[1]), int(match[2])))
+    if not matches:
+        return ""
+    _, _, name, chapter, verse = min(matches)
+    return f"{name} {chapter}:{verse}"
 
 def formatted_excerpt(text, passage):
     normalized = " ".join(text.split())

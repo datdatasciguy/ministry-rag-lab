@@ -137,7 +137,8 @@ python rag.py build --source data/bible.jsonl --index data/bible.sqlite --embedd
 
 Repeat `--source` in the build command to include book exports as well. The
 interface offers Bible verses and Bible footnotes as separate search scopes.
-Exact references such as `John 6:63` prioritize that verse and its notes. Each
+Exact references such as `John 6:63` prioritize that verse and its notes.
+Numbered books also accept forms such as `1 John 1:1` and `I John 1:1`. Each
 result links to the full local verse or footnote; commentary is labeled separately
 from Bible text. The importer checks verse anchors and joins split verse parts.
 It does not execute the export's scripts or copy its media and navigation pages.
