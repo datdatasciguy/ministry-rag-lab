@@ -31,7 +31,7 @@ def related_topics(question):
         return ["sexual immorality", "fornication", "sexual purity", "self-control"]
     return []
 
-def verse_reference(question):
+def verse_references(question):
     matches = []
     numbered = {"1": ("I", "First"), "2": ("II", "Second"), "3": ("III", "Third")}
     for code, name in BOOKS.items():
@@ -41,11 +41,23 @@ def verse_reference(question):
         pattern = r"(?<!\w)(?:" + "|".join(re.escape(alias) for alias in aliases) + r")\.?\s+(\d+):(\d+)\b"
         match = re.search(pattern, question, re.I)
         if match:
-            matches.append((match.start(), -len(match.group()), name, int(match[1]), int(match[2])))
+            matches.append((match.start(), -len(match.group()), name, int(match[1]), int(match[2]), match.end()))
     if not matches:
-        return ""
-    _, _, name, chapter, verse = min(matches)
-    return f"{name} {chapter}:{verse}"
+        return []
+    _, _, name, chapter, verse, end = min(matches)
+    last = verse
+    range_match = re.match(r"\s*[-–—]\s*(?:(\d+):)?(\d+)\b", question[end:])
+    if range_match:
+        if range_match[1] and int(range_match[1]) != chapter:
+            raise ValueError("Use a verse range within one chapter")
+        last = int(range_match[2])
+        if last < verse or last - verse >= 20:
+            raise ValueError("Choose an ascending verse range of at most 20 verses")
+    return [f"{name} {chapter}:{number}" for number in range(verse, last + 1)]
+
+def verse_reference(question):
+    references = verse_references(question)
+    return references[0] if references else ""
 
 def formatted_excerpt(text, passage):
     normalized = " ".join(text.split())
@@ -266,7 +278,8 @@ class SearchIndex:
         topics = related_topics(question)
         if topics:
             focused += " " + " ".join(topics)
-        reference = verse_reference(question)
+        references = verse_references(question)
+        reference = references[0] if references else ""
         terms = [word for word in re.findall(r"\w+", focused.casefold()) if word not in STOPWORDS]
         scores = Counter()
         ranks = {}
@@ -293,7 +306,11 @@ class SearchIndex:
                     ranks.setdefault(row[0], {})['song'] = rank
             if reference:
                 placeholders = ",".join("?" for title in titles)
-                direct = db.execute("SELECT rowid FROM chunks WHERE title IN (" + placeholders + ") AND (heading=? OR heading LIKE ?) ORDER BY length(heading), rowid LIMIT ?", [*titles, reference, reference + " footnote %", candidates]).fetchall()
+                for item in references:
+                    rows = db.execute("SELECT rowid FROM chunks WHERE title IN (" + placeholders + ") AND (heading=? OR heading LIKE ?) ORDER BY length(heading), rowid LIMIT ?", [*titles, item, item + " footnote %", candidates - len(direct)]).fetchall()
+                    direct.extend(rows)
+                    if len(direct) == candidates:
+                        break
                 for rank, row in enumerate(direct, 1):
                     scores[row[0]] += 1 / rank
                     ranks.setdefault(row[0], {})["reference"] = rank

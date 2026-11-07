@@ -141,6 +141,9 @@ Exact references such as `John 6:63` prioritize that verse and its notes.
 Numbered books also accept forms such as `1 John 1:1` and `I John 1:1`. Each
 result links to the full local verse or footnote; commentary is labeled separately
 from Bible text. The importer checks verse anchors and joins split verse parts.
+Same-chapter ranges such as `John 6:63–65` can request up to 20 verses. Increase
+the result limit if you want to see more of the range; cross-chapter ranges need
+separate searches.
 It does not execute the export's scripts or copy its media and navigation pages.
 
 To attach an explicit publisher title/author catalog you already have:
