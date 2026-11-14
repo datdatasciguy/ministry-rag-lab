@@ -154,6 +154,84 @@ def build_index(sources, output, embedding_model=None, progress=None, resume=Fal
     pending.rename(output)
     return {key: manifest[key] for key in ("audit", "chunks", "embedding_model", "complete")}
 
+def extend_index(base, sources, output):
+    base, output = Path(base).resolve(), Path(output).resolve()
+    pending = output.with_suffix(output.suffix + ".building")
+    if output.exists() or pending.exists():
+        raise ValueError("Choose a new index path to preserve existing versions")
+    sections, files, audit = read_sources(sources)
+    chunks = chunk_sections(sections)
+    if not chunks:
+        raise ValueError("No usable new text found")
+    with closing(sqlite3.connect(base.as_uri() + "?mode=ro", uri=True)) as original:
+        row = original.execute("SELECT value FROM metadata WHERE name='manifest'").fetchone()
+        if not row:
+            raise ValueError("Base index has no manifest")
+        manifest = json.loads(row[0])
+        if not manifest.get("complete"):
+            raise ValueError("Base index is incomplete")
+        old_paths = {row["path"] for row in manifest["files"]}
+        new_paths = [row["path"] for row in files]
+        if len(new_paths) != len(set(new_paths)) or any(path in old_paths for path in new_paths):
+            raise ValueError("New sources repeat a file or include one already in the base index")
+        old_titles = set(manifest.get("collections", {}))
+        if any(row["title"] in old_titles for row in sections):
+            raise ValueError("New sources reuse a title label; rebuild to revise an existing title")
+        model = manifest["embedding_model"]
+        if model and model_digest(model) != manifest["embedding_digest"]:
+            raise ValueError("Local embedding model differs from the base index")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with closing(sqlite3.connect(pending)) as db, db:
+                original.backup(db)
+                positions = Counter(dict(db.execute(
+                    "SELECT title, MAX(position) FROM source_sections GROUP BY title")))
+                for section in sections:
+                    if db.execute("SELECT 1 FROM source_sections WHERE id=?", (section["section_id"],)).fetchone():
+                        raise ValueError("A new section already exists in the base index")
+                    positions[section["title"]] += 1
+                    db.execute("INSERT INTO source_sections VALUES (?,?,?,?,?)",
+                               (section["section_id"], section["title"], section["heading"],
+                                positions[section["title"]], section["text"]))
+                    if section.get("kind") in {"bible", "notes"}:
+                        db.execute("INSERT INTO reference_passages VALUES (?,?,?,?)",
+                                   (section["section_id"], section["heading"], section["kind"], section["text"]))
+                for start in range(0, len(chunks), 32):
+                    batch = chunks[start:start + 32]
+                    vectors = [None] * len(batch)
+                    if model:
+                        inputs = [row["title"] + "\n" + row["heading"] + "\n" + row["text"] for row in batch]
+                        for attempt in range(3):
+                            try:
+                                vectors = embed(inputs, model)
+                                break
+                            except RuntimeError:
+                                if attempt == 2:
+                                    raise
+                                manifest["embedding_retries"] += 1
+                                time.sleep(0.5 * (attempt + 1))
+                    if len(vectors) != len(batch):
+                        raise ValueError("Embedding count does not match the batch")
+                    for row, vector in zip(batch, vectors):
+                        blob = None if vector is None else np.asarray(vector, dtype=np.float32).tobytes()
+                        db.execute("INSERT INTO chunks VALUES (?,?,?,?,?,?,?,?)",
+                                   (row["id"], row["section_id"], row["title"], row["heading"],
+                                    row["text"], row["url"], json.dumps(row["pages"]), blob))
+                db.execute("INSERT INTO passages(passages) VALUES ('rebuild')")
+                manifest["files"].extend(files)
+                manifest["audit"] = dict(Counter(manifest["audit"]) + Counter(audit))
+                manifest["chunks"] += len(chunks)
+                manifest["collections"].update({row["title"]: row.get("kind", "ministry") for row in sections})
+                manifest["refreshed_at"] = datetime.now(timezone.utc).isoformat()
+                db.execute("UPDATE metadata SET value=? WHERE name='manifest'", (json.dumps(manifest),))
+            pending.rename(output)
+        except Exception:
+            pending.unlink(missing_ok=True)
+            raise
+    return {"added_files": len(files), "added_sections": len(sections),
+            "added_chunks": len(chunks), "total_chunks": manifest["chunks"],
+            "embedding_model": model}
+
 class SearchIndex:
     def __init__(self, path):
         self.path = Path(path).resolve()

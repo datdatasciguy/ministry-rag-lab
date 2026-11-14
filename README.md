@@ -49,6 +49,19 @@ python rag.py search "Your question" --index data/books.sqlite
 python app.py --index data/books.sqlite
 ```
 
+When you add new, distinct book titles later, extend the index into a new file:
+
+```bash
+python rag.py extend --base data/books.sqlite --source /path/to/new-books --index data/books-v2.sqlite
+```
+
+This copies the complete base index, checks that source files and title labels
+are new, and embeds only the added passages if the base uses local embeddings.
+It keeps the same embedding model and preserves the old index. New titles have
+unverified authorship until you review and attach catalog metadata. Changed
+chapters or reused titles need a fresh full build; this command does not replace
+or resume an earlier index.
+
 Open `http://127.0.0.1:8766`. Keyword search works without a model.
 
 For semantic search and generated answers, run the first-run model picker:

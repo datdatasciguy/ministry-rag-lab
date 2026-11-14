@@ -1,9 +1,10 @@
 import argparse
 import json
+import sqlite3
 
 from local_model import generate
 from model_options import model_profile, read_settings
-from search import SearchIndex, build_index
+from search import SearchIndex, build_index, extend_index
 
 def main():
     # Arguments
@@ -14,6 +15,10 @@ def main():
     build.add_argument("--index", required=True)
     build.add_argument("--embedding-model")
     build.add_argument("--resume", action="store_true")
+    extend = commands.add_parser("extend", help="Add new titles to a new copy of an index")
+    extend.add_argument("--base", required=True)
+    extend.add_argument("--source", action="append", required=True)
+    extend.add_argument("--index", required=True)
     for name in ("search", "ask"):
         query = commands.add_parser(name)
         query.add_argument("question")
@@ -32,13 +37,15 @@ def main():
     try:
         if args.command == "build":
             result = build_index(args.source, args.index, args.embedding_model, resume=args.resume)
+        elif args.command == "extend":
+            result = extend_index(args.base, args.source, args.index)
         else:
             model = (args.model or read_settings().get("model", "qwen2.5:7b")) if args.command == "ask" else ""
             limit = args.limit if args.limit is not None else min(8, model_profile(model)["sources"])
             hits = SearchIndex(args.index).search(args.question, args.mode, limit, args.book, args.author, args.collection)
             result = generate(args.question, hits, model, args.length, args.words) if args.command == "ask" and hits else {"sources": hits}
         print(json.dumps(result, indent=2, ensure_ascii=False))
-    except (ValueError, RuntimeError, OSError) as error:
+    except (ValueError, RuntimeError, OSError, sqlite3.Error) as error:
         parser.exit(1, str(error) + "\n")
 
 if __name__ == "__main__":
